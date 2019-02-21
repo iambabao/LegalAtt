@@ -148,6 +148,8 @@ def read_data(data_file, word_2_id, max_seq_len, max_doc_len):
 
 
 def predict(judger, config_proto):
+    assert config.CURRENT_MODEL == 'han'
+
     word_2_id, id_2_word = util.read_dict(config.WORD_DICT)
     # law_2_id, id_2_law, accu_2_id, id_2_accu = util.init_dict(config.LAW_DICT, config.ACCU_DICT)
     if os.path.exists(config.WORD2VEC_MODEL):
