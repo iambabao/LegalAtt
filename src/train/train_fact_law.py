@@ -173,12 +173,11 @@ def read_law_kb(data_dir, id_2_law, word_2_id, max_seq_len, max_doc_len):
     for i in range(len(id_2_law)):
         law_name = id_2_law[i]
         file_name = os.path.join(data_dir, str(law_name) + '.txt')
-        print(law_name, file_name)
         with codecs.open(file_name, 'r', encoding='utf-8') as f_in:
             law = f_in.readline()
             law = util.refine_text(law)
             law = util.refine_doc(law, max_seq_len, max_doc_len)
-            law = [util.convert_to_id_list((seq, word_2_id) for seq in law)]
+            law = [util.convert_to_id_list(seq, word_2_id) for seq in law]
             law = law[:max_doc_len]
             law_kb.append(law)
 

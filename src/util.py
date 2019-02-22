@@ -99,6 +99,7 @@ def read_dict(dict_file):
 
 # 预处理加分词
 def refine_text(text):
+    text = text.replace(' ', '')
     text = re.sub(r'[\r\n\t]', '', text)
 
     # 将1,000元的格式转化为1000元的格式

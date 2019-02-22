@@ -58,12 +58,10 @@ class FactLaw(object):
         self.article = tf.placeholder(dtype=tf.int32, shape=[None, article_num], name='article')
         self.imprisonment = tf.placeholder(dtype=tf.int32, shape=[None, imprisonment_num], name='imprisonment')
 
-        self.batch_size = tf.shape(self.fact)[0]
-
         with tf.variable_scope('article_extractor'):
             # art_score's shape = [batch_size, article_num]
             # top_k_indices' shape = [batch_size, top_k]
-            self.art_score, self.top_k_indices = self.get_top_k_indices()
+            art_score, self.top_k_indices = self.get_top_k_indices()
 
             # art's shape = [batch_size, top_k, max_doc_len, max_seq_len]
             # art_seq_len's shape = [batch_size, top_k, max_doc_len]
@@ -82,12 +80,12 @@ class FactLaw(object):
             # fact_enc's shape = [batch_size, 2 * hidden_size]
             fact_enc = self.document_encoder(fact_em, self.fact_seq_len, self.fact_doc_len, u_fw, u_fs)
 
-        with tf.variable_scope('article_encoder'):
+        with tf.variable_scope('article_encoder', reuse=tf.AUTO_REUSE):
             u_aw = tf.layers.dense(fact_enc, self.att_size, kernel_regularizer=self.regularizer)
             u_as = tf.layers.dense(fact_enc, self.att_size, kernel_regularizer=self.regularizer)
-            art_em_splits = tf.split(art_em, top_k, axis=1)
-            art_seq_len_splits = tf.split(art_seq_len, top_k, axis=1)
-            art_doc_len_splits = tf.split(art_doc_len, top_k, axis=1)
+            art_em_splits = tf.split(art_em, self.top_k, axis=1)
+            art_seq_len_splits = tf.split(art_seq_len, self.top_k, axis=1)
+            art_doc_len_splits = tf.split(art_doc_len, self.top_k, axis=1)
             enc_outputs = []
             for art, seq_len, doc_len in zip(art_em_splits, art_seq_len_splits, art_doc_len_splits):
                 enc_output = self.document_encoder(art, seq_len, doc_len, u_aw, u_as)
@@ -99,6 +97,7 @@ class FactLaw(object):
         with tf.variable_scope('article_aggregator'):
             u_ad = tf.layers.dense(fact_enc, self.att_size, kernel_regularizer=self.regularizer)
             # art_agg's shape = [batch_size, 2 * hidden_size]
+            # art_att's shape = [batch_size, top_k, 1]
             agg_art_enc, self.art_att = self.article_aggregator(art_enc, u_ad)
 
         with tf.variable_scope('concat_layer'):
@@ -106,15 +105,15 @@ class FactLaw(object):
             final_output = tf.layers.dense(final_output, self.fc_size_1, kernel_regularizer=self.regularizer)
 
         with tf.variable_scope('task_1'):
-            self.task_1_loss = tf.losses.hinge_loss(labels=self.article, logits=self.art_score)
+            task_1_loss = tf.losses.hinge_loss(labels=self.article, logits=art_score)
 
         with tf.variable_scope('task_2'):
-            self.task_2_output, self.task_2_loss = self.output_layer(final_output, self.imprisonment, 'task_2')
+            self.task_2_output, task_2_loss = self.output_layer(final_output, self.imprisonment, 'task_2')
 
         with tf.variable_scope('task_3'):
-            self.task_3_output, self.task_3_loss = self.output_layer(final_output, self.accu, 'task_3')
+            self.task_3_output, task_3_loss = self.output_layer(final_output, self.accu, 'task_3')
 
-        self.loss = self.task_1_loss + self.task_3_loss
+        self.loss = task_1_loss + task_3_loss
         if self.regularizer is not None:
             l2_loss = tf.add_n(tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES))
             self.loss += l2_loss
@@ -136,11 +135,11 @@ class FactLaw(object):
         return scores, indices
 
     def get_top_k_articles(self):
-        articles = tf.batch_gather(self.law_kb, indices=self.top_k_indices)
-        articles_seq_len = tf.batch_gather(self.law_seq_len, indices=self.top_k_indices)
-        articles_doc_len = tf.batch_gather(self.law_doc_len, indices=self.top_k_indices)
+        art = tf.batch_gather(self.law_kb, indices=self.top_k_indices)
+        art_seq_len = tf.batch_gather(self.law_seq_len, indices=self.top_k_indices)
+        art_doc_len = tf.batch_gather(self.law_doc_len, indices=self.top_k_indices)
 
-        return articles, articles_seq_len, articles_doc_len
+        return art, art_seq_len, art_doc_len
 
     def fact_embedding_layer(self):
         fact_em = tf.nn.embedding_lookup(self.embedding_matrix, self.fact)
@@ -183,6 +182,8 @@ class FactLaw(object):
             seq_output = tf.reduce_sum(att_w * seq_output, axis=-2)
 
         with tf.variable_scope('document_level'):
+            doc_len = tf.reshape(doc_len, [-1])
+
             cell_fw = tf.nn.rnn_cell.GRUCell(self.hidden_size)
             cell_bw = tf.nn.rnn_cell.GRUCell(self.hidden_size)
             (output_fw, output_bw), _ = tf.nn.bidirectional_dynamic_rnn(
