@@ -3,6 +3,8 @@ import codecs
 import json
 import collections
 from operator import itemgetter
+from sklearn.feature_extraction.text import TfidfVectorizer as TFIDF
+from sklearn.externals import joblib
 
 from src import config
 from src import util
@@ -78,6 +80,19 @@ def build_word_dict(data_file, word_dict_file, word_count_file, vocab_size, to_l
     return word_2_id
 
 
+def train_tfidf(data_file, feature_size, model_file):
+    with codecs.open(data_file, 'r', encoding='utf-8') as f_in:
+        data = f_in.readlines()
+
+    tfidf = TFIDF(
+        max_features=feature_size,
+        ngram_range=(1, 3)
+    )
+    tfidf.fit(data)
+
+    joblib.dump(tfidf, model_file)
+
+
 def preprocess():
     if not os.path.exists(config.EMBEDDING_DIR):
         os.makedirs(config.EMBEDDING_DIR)
@@ -85,6 +100,7 @@ def preprocess():
     word_2_id = build_word_dict(config.TRAIN_DATA, config.WORD_DICT, config.WORD_COUNT, config.VOCAB_SIZE)
     get_plain_text(config.TRAIN_DATA, config.PLAIN_TEXT, word_2_id)
     util.train_embedding(config.PLAIN_TEXT, config.EMBEDDING_SIZE, config.WORD2VEC_MODEL)
+    train_tfidf(config.PLAIN_TEXT, config.TFIDF_SIZE, config.TFIDF_MODEL)
 
 
 if __name__ == '__main__':

@@ -1,182 +1,252 @@
 import codecs
 import json
 import os
+import random
 import time
 import numpy as np
 import tensorflow as tf
 from sklearn.externals import joblib
 
-import config
-import util
-from topjudge import FactHealth
-
-os.environ['CUDA_VISIBLE_DEVICES'] = config.GPU_ID
-configDevice = tf.ConfigProto(allow_soft_placement=True)  # 创建配置，允许将无法放入GPU的操作放在CUP上执行
-configDevice.gpu_options.allow_growth = True  # 运行时动态增加内存使用量
+from src import config
+from src import util
+from src.model import FactLaw
 
 
-def pad_text(batch, max_doc_len=config.MAX_DOC_LEN, max_seq_len=config.MAX_SEQ_LEN):
-    for i, text in enumerate(batch):
-        batch[i] = [util.pad_sequence(s, max_len=max_seq_len, pad_type='id') for s in text]
-        batch[i] += [[config.PAD_ID] * max_seq_len] * (max_doc_len - len(text))
+def pad_fact_batch(fact_batch):
+    new_batch = []
+    for fact in fact_batch:
+        tmp = [[config.PAD_ID] * config.SEQUENCE_LEN] * config.DOCUMENT_LEN
+        for i in range(len(fact)):
+            tmp[i][:len(fact[i])] = fact[i]
+        new_batch.append(tmp)
+    return new_batch
 
-    return batch
+
+def pad_law_kb(law_kb):
+    new_law_kb = []
+    for art in law_kb:
+        tmp = [[config.PAD_ID] * config.SEQUENCE_LEN] * config.DOCUMENT_LEN
+        for i in range(len(art)):
+            tmp[i][:len(art[i])] = art[i]
+        new_law_kb.append(tmp)
+    return new_law_kb
 
 
-def inference(sess, model, data, batch_size, id_2_disease, out_file, verbose=True):
-    data_size = len(data)
-    num_batches = (data_size + batch_size - 1) // batch_size
-    fact, fact_seq_len, fact_doc_len, tfidf = (list(item) for item in zip(*data))
+def inference(sess, model, batch_iter, kb_data, out_file, verbose=True):
+    law_kb, law_seq_len, law_doc_len = kb_data
 
-    fact_softmax = []
-    art_softmax = []
+    task_1_output = []
+    task_2_output = []
+    task_3_output = []
     start_time = time.time()
-    for i in range(num_batches):
+    for i, batch in enumerate(batch_iter):
         if verbose:
-            print('processing: %5d / %5d' % (i + 1, num_batches), end='\r')
+            print('processing batch: %5d' % i, end='\r')
 
-        start_index = i * batch_size
-        end_index = min(data_size, (i + 1) * batch_size)
-        fact_batch = fact[start_index:end_index]
-        fact_seq_len_batch = fact_seq_len[start_index:end_index]
-        fact_doc_len_batch = fact_doc_len[start_index:end_index]
-        tfidf_batch = tfidf[start_index:end_index]
+        fact, fact_seq_len, fact_doc_len, tfidf = list(zip(*batch))
 
-        fact_batch = pad_text(fact_batch)
+        batch_size = len(fact)
+        fact = pad_fact_batch(fact)
 
         feed_dict = {
-            model.fact: fact_batch,
-            model.fact_seq_len: fact_seq_len_batch,
-            model.fact_doc_len: fact_doc_len_batch,
-            model.tfidf: tfidf_batch
+            model.fact: fact,
+            model.fact_seq_len: fact_seq_len,
+            model.fact_doc_len: fact_doc_len,
+            model.tfidf: tfidf,
+            model.law_kb: [law_kb] * batch_size,
+            model.law_seq_len: [law_seq_len] * batch_size,
+            model.law_doc_len: [law_doc_len] * batch_size
         }
 
-        _fact_softmax, _art_softmax = sess.run(
-            [model.fact_softmax, model.art_softmax],
+        _top_k_indices, _art_att, _task_2_output, _task_3_output = sess.run(
+            [model.top_k_indices, model.art_att, model.task_2_output, model.task_3_output],
             feed_dict=feed_dict
         )
-
-        fact_softmax.extend(_fact_softmax)
-        art_softmax.extend(_art_softmax)
-
+        _task_1_output = [0.0] * config.ARTICLE_NUM
+        for j, k in enumerate(_top_k_indices):
+            _task_1_output[k] = _art_att[j]
+        task_1_output.extend(_task_1_output)
+        task_2_output.extend(_task_2_output)
+        task_3_output.extend(_task_3_output)
     print('\ncost time: %.3fs' % (time.time() - start_time))
 
-    # 多标签预测，根据不同的阈值得到不同的结果
-    for threshold in config.TASK_THRESHOLD:
-        fact_result = [util.get_task_result(s, threshold) for s in fact_softmax]
-        art_result = [util.get_task_result(s, threshold) for s in art_softmax]
-
-        result = []
-        for f, a in zip(fact_result, art_result):
-            result.append({
-                'labels': [id_2_disease[t] for t in f],
-                'articles': [id_2_disease[t] for t in a]
-            })
-
-        print('write file: ', out_file + '-' + str(threshold))
-        with codecs.open(out_file + '-' + str(threshold), 'w', encoding='utf-8') as f_out:
-            for r in result:
-                print(json.dumps(r, ensure_ascii=False), file=f_out)
-
-    # 单标签预测
-    # fact_result = [[np.argmax(s, axis=-1)] for s in fact_softmax]
-    # art_result = [[np.argmax(s, axis=-1)] for s in art_softmax]
+    # 单标签
+    # task_1_result = [[np.argmax(s, axis=-1)] for s in task_1_output]
+    # task_2_result = np.argmax(task_2_output, axis=-1)
+    # task_3_result = [[np.argmax(s, axis=-1)] for s in task_3_output]
     #
     # result = []
-    # for f, a in zip(fact_result, art_result):
+    # for t1, t2, t3 in zip(task_1_result, task_2_result, task_3_result):
     #     result.append({
-    #         'labels': [id_2_disease[t] for t in f],
-    #         'articles': [id_2_disease[t] for t in a]
+    #         'articles': t1,
+    #         'imprisonment': util.id_2_imprisonment(t2),
+    #         'accusation': t3
     #     })
     #
-    # print('write file: ', out_file)
-    # with codecs.open(out_file, 'w', encoding='utf-8') as f_out:
+    # print('write file: ', out_file + '.json')
+    # with codecs.open(out_file + '.json', 'w', encoding='utf-8') as f_out:
     #     for r in result:
-    #         print(json.dumps(r, ensure_ascii=False), file=f_out)
+    #         r = util.format_result(r)
+    #         print(json.dumps(r), file=f_out)
+
+    # 多标签
+    for threshold in config.TASK_THRESHOLD:
+        task_1_result = [util.get_task_result(s, threshold) for s in task_1_output]
+        task_2_result = np.argmax(task_2_output, axis=-1)
+        task_3_result = [util.get_task_result(s, threshold) for s in task_3_output]
+
+        result = []
+        for t1, t2, t3 in zip(task_1_result, task_2_result, task_3_result):
+            result.append({
+                'articles': t1,
+                'imprisonment': util.id_2_imprisonment(t2),
+                'accusation': t3
+            })
+
+        print('write file: ', out_file + '-' + str(threshold) + '.json')
+        with codecs.open(out_file + '-' + str(threshold) + '.json', 'w', encoding='utf-8') as f_out:
+            for r in result:
+                r = util.format_result(r)
+                print(json.dumps(r), file=f_out)
 
 
-def read_test_data(data_file, word_2_id, max_doc_len=config.MAX_DOC_LEN, max_seq_len=config.MAX_SEQ_LEN):
+def make_batch_iter(data, batch_size, shuffle):
+    data_size = len(data)
+
+    if shuffle:
+        random.shuffle(data)
+
+    num_batches = (data_size + batch_size - 1) // batch_size
+    print('total batches: ', num_batches)
+    for i in range(num_batches):
+        start_index = i * batch_size
+        end_index = min(data_size, (i + 1) * batch_size)
+        yield data[start_index: end_index]
+
+
+def read_law_kb(data_dir, id_2_law, word_2_id, max_seq_len, max_doc_len):
+    law_kb = []
+    law_seq_len = []
+    law_doc_len = []
+    for i in range(len(id_2_law)):
+        law_name = id_2_law[i]
+        file_name = os.path.join(data_dir, str(law_name) + '.txt')
+        print(law_name, file_name)
+        with codecs.open(file_name, 'r', encoding='utf-8') as f_in:
+            law = f_in.readline()
+            law = util.refine_text(law)
+            law = util.refine_doc(law, max_seq_len, max_doc_len)
+            law = [util.convert_to_id_list((seq, word_2_id) for seq in law)]
+            law = law[:max_doc_len]
+            law_kb.append(law)
+
+            seq_len = [0] * max_doc_len
+            for j, seq in enumerate(law):
+                seq_len[j] = len(seq)
+            law_seq_len.append(seq_len)
+
+            law_doc_len.append(len(law))
+
+    return pad_law_kb(law_kb), law_seq_len, law_doc_len
+
+
+def read_data(data_file, word_2_id, tfidf_model_file, max_seq_len, max_doc_len):
     print('read file: ', data_file)
     with codecs.open(data_file, 'r', encoding='utf-8') as f_in:
         lines = f_in.readlines()
     print('data size: ', len(lines))
 
-    tfidf_model = joblib.load(config.TFIDF_MODEL_FILE)
+    tfidf_model = joblib.load(tfidf_model_file)
 
+    corpus = []
     fact = []
     fact_seq_len = []
     fact_doc_len = []
-    corpus = []
     for line in lines:
         item = json.loads(line, encoding='utf-8')
 
-        _fact = item['feature'].split('。')
-        _fact = [util.convert_to_id_list(s[:max_seq_len], word_2_id) for s in _fact]
+        _fact = item['fact'].strip().lower()
+        _fact = util.refine_text(_fact)
+        corpus.append(' '.join(_fact))
+
+        _fact = util.refine_doc(_fact, max_seq_len, max_doc_len)
+        _fact = [util.convert_to_id_list(seq, word_2_id) for seq in _fact]
         _fact = _fact[:max_doc_len]
         fact.append(_fact)
-        fact_seq_len.append([len(s) for s in _fact] + [0] * (max_doc_len - len(_fact)))
-        fact_doc_len.append(len(_fact))
 
-        corpus.append(item['feature'])
+        _fact_seq_len = [0] * max_doc_len
+        for i, seq in enumerate(_fact):
+            _fact_seq_len[i] = len(seq)
+        fact_seq_len.append(_fact_seq_len)
+
+        fact_doc_len.append(len(_fact))
 
     return fact, fact_seq_len, fact_doc_len, tfidf_model.transform(corpus).toarray()
 
 
-def read_kb(kb_dir, id_2_disease, word_2_id, max_doc_len=config.MAX_DOC_LEN, max_seq_len=config.MAX_SEQ_LEN):
-    kb = []
-    kb_seq_len = []
-    kb_doc_len = []
-    for i in range(len(id_2_disease)):
-        disease = id_2_disease[i]
-        file = os.path.join(kb_dir, disease + '.txt')
-        with codecs.open(file, 'r', encoding='utf-8') as f_in:
-            text = f_in.readlines()
-        text = [l.strip() for l in text]
-        text = ''.join(text)
-        text = text.replace(' ', '').replace('\r', '').replace('\n', '').lower()
-        if len(text) == 0:
-            text = file  # 如果文本为空，则填充疾病名称
-        text = text.split('。')
-        text = [util.convert_to_id_list(s[:max_seq_len], word_2_id) for s in text]
-        text = text[:max_doc_len]
+def predict(judger, config_proto):
+    assert config.CURRENT_MODEL == 'fact_law'
 
-        kb.append(text)
-        kb_seq_len.append([len(s) for s in text] + [0] * (max_doc_len - len(text)))
-        kb_doc_len.append(len(text))
+    if not os.path.exists(config.MODEL_DIR):
+        os.makedirs(config.MODEL_DIR)
+    if not os.path.exists(config.RESULT_DIR):
+        os.makedirs(config.RESULT_DIR)
 
-    return pad_text(kb), kb_seq_len, kb_doc_len
-
-
-def predict():
     word_2_id, id_2_word = util.read_dict(config.WORD_DICT)
-    vocab_size = min(config.VOCAB_SIZE, len(word_2_id))
-    disease_2_id, id_2_disease = util.init_dict(config.DISEASE_DICT)
-    kb, kb_seq_len, kb_doc_len = read_kb(config.KB_DIR, id_2_disease, word_2_id)
-
-    if os.path.exists(config.EMBEDDING_FILE):
-        word_embed = util.load_embedding(config.EMBEDDING_FILE, word_2_id.keys())
+    law_2_id, id_2_law, accu_2_id, id_2_accu = util.init_dict(config.LAW_DICT, config.ACCU_DICT)
+    if os.path.exists(config.WORD2VEC_MODEL):
+        embedding_matrix = util.load_embedding(config.WORD2VEC_MODEL, word_2_id.keys())
+        embedding_trainable = False
     else:
-        word_embed = np.random.uniform(-0.5, 0.5, [vocab_size, config.EMBEDDING_SIZE])
+        embedding_matrix = np.random.uniform(-0.5, 0.5, [config.VOCAB_SIZE, config.EMBEDDING_SIZE])
+        embedding_trainable = True
 
-    with tf.variable_scope('model', reuse=None):
-        test_model = FactHealth(
-            disease_num=config.DISEASE_NUM, max_doc_len=config.MAX_DOC_LEN, max_seq_len=config.MAX_SEQ_LEN,
-            k_size=config.K_SIZE, kb=kb, kb_doc_len=kb_doc_len, kb_seq_len=kb_seq_len,
-            tfidf_size=config.TFIDF_SIZE, word_embed=word_embed,
-            hidden_size=config.HIDDEN_SIZE, att_size=config.ATT_SIZE, optimizer=config.OPTIMIZER,
+    with tf.variable_scope('model', reuse=True):
+        test_model = FactLaw(
+            accu_num=config.ACCU_NUM, article_num=config.ARTICLE_NUM, imprisonment_num=config.IMPRISONMENT_NUM,
+            top_k=config.TOP_K, tfidf_size=config.TFIDF_SIZE,
+            max_seq_len=config.SEQUENCE_LEN, max_doc_len=config.DOCUMENT_LEN,
+            hidden_size=config.HIDDEN_SIZE, att_size=config.ATT_SIZE,
+            fc_size_1=config.FC_SIZE_M, fc_size_2=config.FC_SIZE_S,
+            embedding_matrix=embedding_matrix, embedding_trainable=embedding_trainable,
             lr_base=config.LR_BASE, lr_decay_rate=config.LR_DECAY_RATE, lr_decay_step=config.LR_DECAY_STEP,
-            keep_prob=config.KEEP_PROB, grad_clip=config.GRAD_CLIP, l2_rate=config.L2_RATE, is_training=False
+            optimizer=config.OPTIMIZER, keep_prob=config.KEEP_PROB, grad_clip=config.GRAD_CLIP, l2_rate=config.L2_RATE,
+            is_training=False
         )
 
-    test_data = read_test_data(config.TEST_DATA_FILE, word_2_id)
+    test_data = read_data(config.TRAIN_DATA, word_2_id, config.TFIDF_MODEL, config.SEQUENCE_LEN, config.DOCUMENT_LEN)
+    kb_data = read_law_kb(config.LAW_KB_DIR, id_2_law, word_2_id, config.SEQUENCE_LEN, config.DOCUMENT_LEN)
 
     saver = tf.train.Saver(max_to_keep=1)
-    with tf.Session(config=configDevice) as sess:
-        print('load model from: ', config.MODEL_FILE)
+    with tf.Session(config=config_proto) as sess:
+        print('load model from: ' + config.MODEL_FILE)
         saver.restore(sess, config.MODEL_FILE)
 
-        inference(sess, test_model, list(zip(*test_data)), config.BATCH_SIZE, id_2_disease, config.TEST_RESULT_FILE)
+        print('==========  Test  ==========')
+        test_batch_iter = make_batch_iter(list(zip(*test_data)), config.BATCH_SIZE, shuffle=False)
+        inference(sess, test_model, test_batch_iter, kb_data, config.TEST_RESULT, verbose=True)
 
+        # 单标签
+        # result = judger.my_test(config.TEST_DATA, config.TEST_RESULT + '.json')
+        # accu_micro_f1, accu_macro_f1 = judger.calc_f1(result[0])
+        # article_micro_f1, article_macro_f1 = judger.calc_f1(result[1])
+        # score = judger.get_score(result)
+        # print('Threshold: %.3f' % threshold)
+        # print('Micro-F1 of accusation: %.3f' % accu_micro_f1)
+        # print('Macro-F1 of accusation: %.3f' % accu_macro_f1)
+        # print('Micro-F1 of relevant articles: %.3f' % article_micro_f1)
+        # print('Macro-F1 of relevant articles: %.3f' % article_macro_f1)
+        # print('Score: ', score)
 
-if __name__ == '__main__':
-    predict()
+        # 多标签
+        for threshold in config.TASK_THRESHOLD:
+            result = judger.my_test(config.TEST_DATA, config.TEST_RESULT + '-' + str(threshold) + '.json')
+            accu_micro_f1, accu_macro_f1 = judger.calc_f1(result[0])
+            article_micro_f1, article_macro_f1 = judger.calc_f1(result[1])
+            score = judger.get_score(result)
+            print('Threshold: %.3f' % threshold)
+            print('Micro-F1 of accusation: %.3f' % accu_micro_f1)
+            print('Macro-F1 of accusation: %.3f' % accu_macro_f1)
+            print('Micro-F1 of relevant articles: %.3f' % article_micro_f1)
+            print('Macro-F1 of relevant articles: %.3f' % article_macro_f1)
+            print('Score: ', score)

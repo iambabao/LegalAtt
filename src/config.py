@@ -16,10 +16,14 @@ WORD_COUNT = os.path.join(DATA_DIR, 'word_count.json')
 ACCU_DICT = os.path.join(DATA_DIR, 'accu.txt')
 LAW_DICT = os.path.join(DATA_DIR, 'law.txt')
 
+# 存储法律文本
+LAW_KB_DIR = os.path.join(DATA_DIR, 'law_kb')
+
 # 存储词向量文件
 EMBEDDING_DIR = os.path.join(DATA_DIR, 'embedding')
 PLAIN_TEXT = os.path.join(EMBEDDING_DIR, 'plain_text.txt')
 WORD2VEC_MODEL = os.path.join(EMBEDDING_DIR, 'word2vec.model')
+TFIDF_MODEL = os.path.join(EMBEDDING_DIR, 'tfidf.model')
 
 CURRENT_MODEL = 'bilstm'
 
@@ -48,6 +52,9 @@ IMPRISONMENT_NUM = 9
 
 TASK_THRESHOLD = [0.1, 0.2, 0.3, 0.4, 0.5]
 
+# LinearSVM
+TFIDF_SIZE = 5000
+
 # RNN
 HIDDEN_SIZE = 100
 
@@ -67,6 +74,9 @@ ATT_SIZE = 100
 FC_SIZE_S = 200
 FC_SIZE_M = 500
 FC_SIZE_L = 1000
+
+# Fact_law
+TOP_K = 5
 
 NUM_EPOCH = 30
 BATCH_SIZE = 64

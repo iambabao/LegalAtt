@@ -40,6 +40,27 @@ def pad_sequence(seq, max_len, pad_type):
     return seq + [pad] * max(0, max_len - len(seq))
 
 
+# convert word list to sequence list, each sequence contains one or more sentence.
+def refine_doc(data, max_seq_len, max_doc_len):
+    doc = []
+    beg, end = 0, 0
+    while end < len(data):
+        end += 1
+        if data[end - 1] in ['，', '。', '！', '？', '；']:
+            doc.append(data[beg:min(end, beg + max_seq_len)])
+            beg = end
+    if beg != end:
+        doc.append(data[beg:min(end, beg + max_seq_len)])
+    beg = 0
+    while len(doc) > max_doc_len and beg < len(doc) - 1:
+        if len(doc[beg]) + len(doc[beg + 1]) <= max_seq_len:
+            doc[beg].extend(doc[beg + 1])
+            del doc[beg + 1]
+        else:
+            beg += 1
+    return doc
+
+
 def train_embedding(text_file, embedding_size, model_file):
     data = []
     with codecs.open(text_file, 'r', encoding='utf-8') as f_in:
