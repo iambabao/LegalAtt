@@ -6,8 +6,7 @@ class FactLaw(object):
                  top_k, tfidf_size, max_seq_len, max_doc_len,
                  hidden_size, att_size, fc_size_1, fc_size_2,
                  embedding_matrix, embedding_trainable,
-                 lr_base, lr_decay_rate, lr_decay_step, optimizer,
-                 keep_prob, grad_clip, l2_rate, is_training):
+                 lr, optimizer, keep_prob, l2_rate, is_training):
         self.accu_num = accu_num
         self.article_num = article_num
         self.imprisonment_num = imprisonment_num
@@ -28,13 +27,9 @@ class FactLaw(object):
             name='embedding_matrix')
         self.embedding_size = embedding_matrix.shape[-1]
 
-        self.lr_base = lr_base
-        self.lr_decay_rate = lr_decay_rate
-        self.lr_decay_step = lr_decay_step
+        self.lr = lr
         self.optimizer = optimizer
-
         self.keep_prob = keep_prob
-        self.grad_clip = grad_clip
         self.l2_rate = l2_rate
 
         self.is_training = is_training
@@ -253,27 +248,17 @@ class FactLaw(object):
 
     def get_train_op(self):
         global_step = tf.Variable(0, trainable=False, name='global_step')
-        lr = tf.train.exponential_decay(
-            learning_rate=self.lr_base,
-            decay_rate=self.lr_decay_rate,
-            decay_steps=self.lr_decay_step,
-            global_step=global_step
-        )
-        params = tf.trainable_variables()
-        gradients = tf.gradients(self.loss, params)
-        if self.grad_clip > 0.0:
-            gradients, _ = tf.clip_by_global_norm(gradients, self.grad_clip)
 
         if self.optimizer == 'Adam':
-            optimizer = tf.train.AdamOptimizer(learning_rate=lr)
+            optimizer = tf.train.AdamOptimizer(learning_rate=self.lr)
         elif self.optimizer == 'Adadelta':
-            optimizer = tf.train.AdadeltaOptimizer(learning_rate=lr)
+            optimizer = tf.train.AdadeltaOptimizer(learning_rate=self.lr)
         elif self.optimizer == 'Adagrad':
-            optimizer = tf.train.AdagradOptimizer(learning_rate=lr)
+            optimizer = tf.train.AdagradOptimizer(learning_rate=self.lr)
         elif self.optimizer == 'SGD':
-            optimizer = tf.train.GradientDescentOptimizer(learning_rate=lr)
+            optimizer = tf.train.GradientDescentOptimizer(learning_rate=self.lr)
         else:
-            optimizer = tf.train.GradientDescentOptimizer(learning_rate=lr)
+            optimizer = tf.train.GradientDescentOptimizer(learning_rate=self.lr)
 
-        train_op = optimizer.apply_gradients(zip(gradients, params), global_step=global_step)
+        train_op = optimizer.minimize(self.loss, global_step=global_step)
         return global_step, train_op

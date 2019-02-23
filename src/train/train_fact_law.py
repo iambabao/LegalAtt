@@ -275,8 +275,7 @@ def train(judger, config_proto):
             hidden_size=config.HIDDEN_SIZE, att_size=config.ATT_SIZE,
             fc_size_1=config.FC_SIZE_M, fc_size_2=config.FC_SIZE_S,
             embedding_matrix=embedding_matrix, embedding_trainable=embedding_trainable,
-            lr_base=config.LR_BASE, lr_decay_rate=config.LR_DECAY_RATE, lr_decay_step=config.LR_DECAY_STEP,
-            optimizer=config.OPTIMIZER, keep_prob=config.KEEP_PROB, grad_clip=config.GRAD_CLIP, l2_rate=config.L2_RATE,
+            lr=config.LR, optimizer=config.OPTIMIZER, keep_prob=config.KEEP_PROB, l2_rate=config.L2_RATE,
             is_training=True
         )
     with tf.variable_scope('model', reuse=True):
@@ -287,8 +286,7 @@ def train(judger, config_proto):
             hidden_size=config.HIDDEN_SIZE, att_size=config.ATT_SIZE,
             fc_size_1=config.FC_SIZE_M, fc_size_2=config.FC_SIZE_S,
             embedding_matrix=embedding_matrix, embedding_trainable=embedding_trainable,
-            lr_base=config.LR_BASE, lr_decay_rate=config.LR_DECAY_RATE, lr_decay_step=config.LR_DECAY_STEP,
-            optimizer=config.OPTIMIZER, keep_prob=config.KEEP_PROB, grad_clip=config.GRAD_CLIP, l2_rate=config.L2_RATE,
+            lr=config.LR, optimizer=config.OPTIMIZER, keep_prob=config.KEEP_PROB, l2_rate=config.L2_RATE,
             is_training=False
         )
 

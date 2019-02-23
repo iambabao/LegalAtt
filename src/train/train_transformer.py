@@ -196,8 +196,7 @@ def train(judger, config_proto):
             accu_num=config.ACCU_NUM, article_num=config.ARTICLE_NUM, imprisonment_num=config.IMPRISONMENT_NUM,
             block_num=config.BLOCK_NUM, head_num=config.HEAD_NUM, model_dim=config.MODEL_DIM, fc_size=config.FC_SIZE_M,
             embedding_matrix=embedding_matrix, embedding_trainable=embedding_trainable,
-            lr_base=config.LR_BASE, lr_decay_rate=config.LR_DECAY_RATE, lr_decay_step=config.LR_DECAY_STEP,
-            optimizer=config.OPTIMIZER, keep_prob=config.KEEP_PROB, grad_clip=config.GRAD_CLIP, l2_rate=config.L2_RATE,
+            lr=config.LR, optimizer=config.OPTIMIZER, keep_prob=config.KEEP_PROB, l2_rate=config.L2_RATE,
             is_training=True
         )
     with tf.variable_scope('model', reuse=True):
@@ -205,8 +204,7 @@ def train(judger, config_proto):
             accu_num=config.ACCU_NUM, article_num=config.ARTICLE_NUM, imprisonment_num=config.IMPRISONMENT_NUM,
             block_num=config.BLOCK_NUM, head_num=config.HEAD_NUM, model_dim=config.MODEL_DIM, fc_size=config.FC_SIZE_M,
             embedding_matrix=embedding_matrix, embedding_trainable=embedding_trainable,
-            lr_base=config.LR_BASE, lr_decay_rate=config.LR_DECAY_RATE, lr_decay_step=config.LR_DECAY_STEP,
-            optimizer=config.OPTIMIZER, keep_prob=config.KEEP_PROB, grad_clip=config.GRAD_CLIP, l2_rate=config.L2_RATE,
+            lr=config.LR, optimizer=config.OPTIMIZER, keep_prob=config.KEEP_PROB, l2_rate=config.L2_RATE,
             is_training=False
         )
 
