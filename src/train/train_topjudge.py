@@ -142,16 +142,16 @@ def read_data(data_file, word_2_id, law_2_id, accu_2_id, max_len):
         for i in range(len(tmp)):
             tmp[i] = tmp[i].replace('[', '').replace(']', '')
         tmp = util.convert_to_id_list(tmp, accu_2_id)
-        _accu = [0.0] * config.ACCU_NUM
+        _accu = [0] * config.ACCU_NUM
         for i in tmp:
-            _accu[i] = 1.0 / len(tmp)
+            _accu[i] = 1
         accu.append(_accu)
 
         tmp = [str(t) for t in item['meta']['relevant_articles']]
         tmp = util.convert_to_id_list(tmp, law_2_id)
-        _article = [0.0] * config.ARTICLE_NUM
+        _article = [0] * config.ARTICLE_NUM
         for i in tmp:
-            _article[i] = 1.0 / len(tmp)
+            _article[i] = 1
         article.append(_article)
 
         tmp = item['meta']['term_of_imprisonment']

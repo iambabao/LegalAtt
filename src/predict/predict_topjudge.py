@@ -20,10 +20,8 @@ def inference(sess, model, batch_iter, out_file, verbose=True):
         if verbose:
             print('processing batch: %5d' % i, end='\r')
 
-        fact = list(zip(*batch))
-
         feed_dict = {
-            model.fact: fact
+            model.fact: batch
         }
 
         _task_1_output, _task_2_output, _task_3_output = sess.run(
@@ -137,7 +135,7 @@ def predict(judger, config_proto):
         saver.restore(sess, config.MODEL_FILE)
 
         print('==========  Test  ==========')
-        test_batch_iter = make_batch_iter(list(zip(*test_data)), config.BATCH_SIZE, shuffle=False)
+        test_batch_iter = make_batch_iter(test_data, config.BATCH_SIZE, shuffle=False)
         inference(sess, test_model, test_batch_iter, config.TEST_RESULT, verbose=True)
 
         # 单标签
