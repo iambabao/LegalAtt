@@ -155,23 +155,8 @@ def read_data(data_file, word_2_id, law_2_id, accu_2_id, max_seq_len, max_doc_le
 
         _fact = item['fact'].strip().lower()
         _fact = util.refine_text(_fact)
-        doc = []
-        beg, end = 0, 0
-        while end < len(_fact):
-            end += 1
-            if _fact[end - 1] in ['，', '。', '！', '？', '；']:
-                doc.append(_fact[beg:min(end, beg + max_seq_len)])
-                beg = end
-        if beg != end:
-            doc.append(_fact[beg:min(end, beg + max_seq_len)])
-        beg = 0
-        while len(doc) > max_doc_len and beg < len(doc) - 1:
-            if len(doc[beg]) + len(doc[beg + 1]) <= max_seq_len:
-                doc[beg].extend(doc[beg + 1])
-                del doc[beg + 1]
-            else:
-                beg += 1
-        _fact = [util.convert_to_id_list(seq, word_2_id) for seq in doc]
+        _fact = util.refine_doc(_fact, max_seq_len, max_doc_len)
+        _fact = [util.convert_to_id_list(seq, word_2_id) for seq in _fact]
         _fact = _fact[:max_doc_len]
         fact.append(_fact)
 
@@ -186,16 +171,16 @@ def read_data(data_file, word_2_id, law_2_id, accu_2_id, max_seq_len, max_doc_le
         for i in range(len(tmp)):
             tmp[i] = tmp[i].replace('[', '').replace(']', '')
         tmp = util.convert_to_id_list(tmp, accu_2_id)
-        _accu = [0.0] * config.ACCU_NUM
+        _accu = [0] * config.ACCU_NUM
         for i in tmp:
-            _accu[i] += 1.0 / len(tmp)
+            _accu[i] = 1
         accu.append(_accu)
 
         tmp = [str(t) for t in item['meta']['relevant_articles']]
         tmp = util.convert_to_id_list(tmp, law_2_id)
-        _article = [0.0] * config.ARTICLE_NUM
+        _article = [0] * config.ARTICLE_NUM
         for i in tmp:
-            _article[i] += 1.0 / len(tmp)
+            _article[i] = 1
         article.append(_article)
 
         tmp = item['meta']['term_of_imprisonment']
