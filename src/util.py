@@ -40,34 +40,13 @@ def pad_sequence(seq, max_len, pad_type):
     return seq + [pad] * max(0, max_len - len(seq))
 
 
-# convert word list to sequence list, each sequence contains one or more sentence.
-def refine_doc(data, max_seq_len, max_doc_len):
-    doc = []
-    beg, end = 0, 0
-    while end < len(data):
-        end += 1
-        if data[end - 1] in ['，', '。', '！', '？', '；']:
-            doc.append(data[beg:min(end, beg + max_seq_len)])
-            beg = end
-    if beg != end:
-        doc.append(data[beg:min(end, beg + max_seq_len)])
-    beg = 0
-    while len(doc) > max_doc_len and beg < len(doc) - 1:
-        if len(doc[beg]) + len(doc[beg + 1]) <= max_seq_len:
-            doc[beg].extend(doc[beg + 1])
-            del doc[beg + 1]
-        else:
-            beg += 1
-    return doc
-
-
 def train_embedding(text_file, embedding_size, model_file):
     data = []
     with codecs.open(text_file, 'r', encoding='utf-8') as f_in:
         for line in f_in:
             data.append(line.strip().split())
 
-    model = Word2Vec(data, size=embedding_size, window=5, min_count=1)
+    model = Word2Vec(data, size=embedding_size, window=5, min_count=5)
     model.save(model_file)
 
 
@@ -78,10 +57,8 @@ def load_embedding(model_file, word_list):
     for word in word_list:
         if word in model:
             embedding_matrix.append(model[word])
-        elif word == config.PAD:
-            embedding_matrix.append(np.zeros(model.vector_size))
         else:
-            embedding_matrix.append(model[config.UNK])
+            embedding_matrix.append(np.zeros(model.vector_size))
 
     return np.asarray(embedding_matrix)
 
@@ -139,6 +116,27 @@ def refine_text(text):
 
     text = [_ for _ in jieba.cut(text, cut_all=False)]
     return text
+
+
+# convert word list to sequence list, each sequence contains one or more sentence.
+def refine_doc(data, max_seq_len, max_doc_len):
+    doc = []
+    beg, end = 0, 0
+    while end < len(data):
+        end += 1
+        if data[end - 1] in ['，', '。', '！', '？', '；']:
+            doc.append(data[beg:min(end, beg + max_seq_len)])
+            beg = end
+    if beg != end:
+        doc.append(data[beg:min(end, beg + max_seq_len)])
+    beg = 0
+    while len(doc) > max_doc_len and beg < len(doc) - 1:
+        if len(doc[beg]) + len(doc[beg + 1]) <= max_seq_len:
+            doc[beg].extend(doc[beg + 1])
+            del doc[beg + 1]
+        else:
+            beg += 1
+    return doc
 
 
 def init_dict(law_dict, accu_dict):
