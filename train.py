@@ -27,8 +27,11 @@ elif config.CURRENT_MODEL == 'topjudge':
     from src.train.train_topjudge import train
 elif config.CURRENT_MODEL == 'fact_law':
     from src.train.train_fact_law import train
+elif config.CURRENT_MODEL == 'law_att':
+    from src.train.train_law_att import train
 else:
-    exit(1)
+    print('No model named: ', config.CURRENT_MODEL)
+    exit()
 
 os.environ['CUDA_VISIBLE_DEVICES'] = config.GPU_ID
 config_proto = tf.ConfigProto(allow_soft_placement=True)  # 创建配置，允许将无法放入GPU的操作放在CUP上执行

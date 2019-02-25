@@ -5,7 +5,9 @@ from src import config
 from src.judger import Judger
 
 print('Current model: ', config.CURRENT_MODEL)
-if config.CURRENT_MODEL == 'bilstm':
+if config.CURRENT_MODEL == 'fasttext':
+    from src.predict.predict_fasttext import predict
+elif config.CURRENT_MODEL == 'bilstm':
     from src.predict.predict_bilstm import predict
 elif config.CURRENT_MODEL == 'bilstm_att':
     from src.predict.predict_bilstm_att import predict
@@ -19,13 +21,16 @@ elif config.CURRENT_MODEL == 'cnn':
     from src.predict.predict_cnn import predict
 elif config.CURRENT_MODEL == 'dpcnn':
     from src.predict.predict_dpcnn import predict
-elif config.CURRENT_MODEL == 'fasttext':
-    from src.predict.predict_fasttext import predict
-elif config.CURRENT_MODEL == 'topjudge':
-    from src.predict.predict_topjudge import predict
 elif config.CURRENT_MODEL == 'transformer':
     from src.predict.predict_transformer import predict
+elif config.CURRENT_MODEL == 'topjudge':
+    from src.predict.predict_topjudge import predict
+elif config.CURRENT_MODEL == 'fact_law':
+    from src.predict.predict_fact_law import predict
+elif config.CURRENT_MODEL == 'law_att':
+    from src.predict.predict_law_att import predict
 else:
+    print('No model named: ', config.CURRENT_MODEL)
     exit()
 
 os.environ['CUDA_VISIBLE_DEVICES'] = config.GPU_ID
