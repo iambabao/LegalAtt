@@ -15,20 +15,20 @@ from src.model import FactLaw
 def pad_fact_batch(fact_batch):
     new_batch = []
     for fact in fact_batch:
-        tmp = [[config.PAD_ID] * config.SEQUENCE_LEN] * config.DOCUMENT_LEN
+        temp = [[config.PAD_ID] * config.SEQUENCE_LEN] * config.DOCUMENT_LEN
         for i in range(len(fact)):
-            tmp[i][:len(fact[i])] = fact[i]
-        new_batch.append(tmp)
+            temp[i][:len(fact[i])] = fact[i]
+        new_batch.append(temp)
     return new_batch
 
 
 def pad_law_kb(law_kb):
     new_law_kb = []
     for art in law_kb:
-        tmp = [[config.PAD_ID] * config.SEQUENCE_LEN] * config.DOCUMENT_LEN
+        temp = [[config.PAD_ID] * config.SEQUENCE_LEN] * config.DOCUMENT_LEN
         for i in range(len(art)):
-            tmp[i][:len(art[i])] = art[i]
-        new_law_kb.append(tmp)
+            temp[i][:len(art[i])] = art[i]
+        new_law_kb.append(temp)
     return new_law_kb
 
 
@@ -43,7 +43,7 @@ def inference(sess, model, batch_iter, kb_data, out_file, verbose=True):
         if verbose:
             print('processing batch: %5d' % i, end='\r')
 
-        fact, fact_seq_len, fact_doc_len, tfidf, _, _, _ = list(zip(*batch))
+        fact, fact_seq_len, fact_doc_len, tfidf, _, _ = list(zip(*batch))
 
         batch_size = len(fact)
         fact = pad_fact_batch(fact)
@@ -58,29 +58,26 @@ def inference(sess, model, batch_iter, kb_data, out_file, verbose=True):
             model.law_doc_len: [law_doc_len] * batch_size
         }
 
-        _top_k_indices, _art_att, _task_2_output, _task_3_output = sess.run(
-            [model.top_k_indices, model.art_att, model.task_2_output, model.task_3_output],
+        _task_1_output = sess.run(
+            model.task_1_output,
             feed_dict=feed_dict
         )
-        _task_1_output = [0.0] * config.ARTICLE_NUM
-        for j, k in enumerate(_top_k_indices):
-            _task_1_output[k] = _art_att[j]
         task_1_output.extend(_task_1_output)
-        task_2_output.extend(_task_2_output)
-        task_3_output.extend(_task_3_output)
+        task_2_output.extend([[0.0] * config.ARTICLE_NUM] * batch_size)
+        task_3_output.extend([[0.0] * config.IMPRISONMENT_NUM] * batch_size)
     print('\ncost time: %.3fs' % (time.time() - start_time))
 
     # 单标签
     # task_1_result = [[np.argmax(s, axis=-1)] for s in task_1_output]
-    # task_2_result = np.argmax(task_2_output, axis=-1)
-    # task_3_result = [[np.argmax(s, axis=-1)] for s in task_3_output]
+    # task_2_result = [[np.argmax(s, axis=-1)] for s in task_2_output]
+    # task_3_result = np.argmax(task_3_output, axis=-1)
     #
     # result = []
     # for t1, t2, t3 in zip(task_1_result, task_2_result, task_3_result):
     #     result.append({
-    #         'articles': t1,
-    #         'imprisonment': util.id_2_imprisonment(t2),
-    #         'accusation': t3
+    #         'accusation': t1,
+    #         'articles': t2,
+    #         'imprisonment': util.id_2_imprisonment(t3),
     #     })
     #
     # print('write file: ', out_file + '.json')
@@ -92,15 +89,15 @@ def inference(sess, model, batch_iter, kb_data, out_file, verbose=True):
     # 多标签
     for threshold in config.TASK_THRESHOLD:
         task_1_result = [util.get_task_result(s, threshold) for s in task_1_output]
-        task_2_result = np.argmax(task_2_output, axis=-1)
-        task_3_result = [util.get_task_result(s, threshold) for s in task_3_output]
+        task_2_result = [util.get_task_result(s, threshold) for s in task_2_output]
+        task_3_result = np.argmax(task_3_output, axis=-1)
 
         result = []
         for t1, t2, t3 in zip(task_1_result, task_2_result, task_3_result):
             result.append({
-                'articles': t1,
-                'imprisonment': util.id_2_imprisonment(t2),
-                'accusation': t3
+                'accusation': t1,
+                'articles': t2,
+                'imprisonment': util.id_2_imprisonment(t3),
             })
 
         print('write file: ', out_file + '-' + str(threshold) + '.json')
@@ -118,7 +115,7 @@ def run_epoch(sess, model, batch_iter, kb_data, verbose=True):
     _global_step = 0
     start_time = time.time()
     for batch in batch_iter:
-        fact, fact_seq_len, fact_doc_len, tfidf, accu, article, imprisonment = list(zip(*batch))
+        fact, fact_seq_len, fact_doc_len, tfidf, accu, article = list(zip(*batch))
 
         batch_size = len(fact)
         fact = pad_fact_batch(fact)
@@ -132,8 +129,7 @@ def run_epoch(sess, model, batch_iter, kb_data, verbose=True):
             model.law_seq_len: [law_seq_len] * batch_size,
             model.law_doc_len: [law_doc_len] * batch_size,
             model.accu: accu,
-            model.article: article,
-            model.imprisonment: imprisonment
+            model.article: article
         }
 
         _, _loss, _global_step = sess.run(
@@ -178,12 +174,11 @@ def read_law_kb(data_dir, id_2_law, word_2_id, max_seq_len, max_doc_len):
             law = util.refine_text(law)
             law = util.refine_doc(law, max_seq_len, max_doc_len)
             law = [util.convert_to_id_list(seq, word_2_id) for seq in law]
-            law = law[:max_doc_len]
             law_kb.append(law)
 
             seq_len = [0] * max_doc_len
-            for j, seq in enumerate(law):
-                seq_len[j] = len(seq)
+            for j in range(len(law)):
+                seq_len[j] = len(law[j])
             law_seq_len.append(seq_len)
 
             law_doc_len.append(len(law))
@@ -205,7 +200,6 @@ def read_data(data_file, word_2_id, law_2_id, accu_2_id, tfidf_model_file, max_s
     fact_doc_len = []
     accu = []
     article = []
-    imprisonment = []
     for line in lines:
         item = json.loads(line, encoding='utf-8')
 
@@ -215,39 +209,32 @@ def read_data(data_file, word_2_id, law_2_id, accu_2_id, tfidf_model_file, max_s
 
         _fact = util.refine_doc(_fact, max_seq_len, max_doc_len)
         _fact = [util.convert_to_id_list(seq, word_2_id) for seq in _fact]
-        _fact = _fact[:max_doc_len]
         fact.append(_fact)
 
         _fact_seq_len = [0] * max_doc_len
-        for i, seq in enumerate(_fact):
-            _fact_seq_len[i] = len(seq)
+        for i in range(len(_fact)):
+            _fact_seq_len[i] = len(_fact[i])
         fact_seq_len.append(_fact_seq_len)
 
         fact_doc_len.append(len(_fact))
 
-        tmp = item['meta']['accusation']
-        for i in range(len(tmp)):
-            tmp[i] = tmp[i].replace('[', '').replace(']', '')
-        tmp = util.convert_to_id_list(tmp, accu_2_id)
-        _accu = [0.0] * config.ACCU_NUM
-        for i in tmp:
-            _accu[i] += 1.0 / len(tmp)
+        temp = item['meta']['accusation']
+        for i in range(len(temp)):
+            temp[i] = temp[i].replace('[', '').replace(']', '')
+        temp = [accu_2_id[v] for v in temp]
+        _accu = [0] * config.ACCU_NUM
+        for i in temp:
+            _accu[i] = 1
         accu.append(_accu)
 
-        tmp = [str(t) for t in item['meta']['relevant_articles']]
-        tmp = util.convert_to_id_list(tmp, law_2_id)
+        temp = [str(t) for t in item['meta']['relevant_articles']]
+        temp = [law_2_id[v] for v in temp]
         _article = [0] * config.ARTICLE_NUM
-        for i in tmp:
+        for i in temp:
             _article[i] = 1
         article.append(_article)
 
-        tmp = item['meta']['term_of_imprisonment']
-        tmp = util.imprisonment_2_id(tmp)
-        _imprisonment = [0] * config.IMPRISONMENT_NUM
-        _imprisonment[tmp] = 1
-        imprisonment.append(_imprisonment)
-
-    return fact, fact_seq_len, fact_doc_len, tfidf_model.transform(corpus).toarray(), accu, article, imprisonment
+    return fact, fact_seq_len, fact_doc_len, tfidf_model.transform(corpus).toarray(), accu, article
 
 
 def train(judger, config_proto):
@@ -269,22 +256,20 @@ def train(judger, config_proto):
 
     with tf.variable_scope('model', reuse=None):
         train_model = FactLaw(
-            accu_num=config.ACCU_NUM, article_num=config.ARTICLE_NUM, imprisonment_num=config.IMPRISONMENT_NUM,
+            accu_num=config.ACCU_NUM, article_num=config.ARTICLE_NUM,
             top_k=config.TOP_K, tfidf_size=config.TFIDF_SIZE,
             max_seq_len=config.SEQUENCE_LEN, max_doc_len=config.DOCUMENT_LEN,
-            hidden_size=config.HIDDEN_SIZE, att_size=config.ATT_SIZE,
-            fc_size_1=config.FC_SIZE_M, fc_size_2=config.FC_SIZE_S,
+            hidden_size=config.HIDDEN_SIZE, att_size=config.ATT_SIZE, fc_size=config.FC_SIZE_S,
             embedding_matrix=embedding_matrix, embedding_trainable=embedding_trainable,
             lr=config.LR, optimizer=config.OPTIMIZER, keep_prob=config.KEEP_PROB, l2_rate=config.L2_RATE,
             is_training=True
         )
     with tf.variable_scope('model', reuse=True):
         valid_model = FactLaw(
-            accu_num=config.ACCU_NUM, article_num=config.ARTICLE_NUM, imprisonment_num=config.IMPRISONMENT_NUM,
+            accu_num=config.ACCU_NUM, article_num=config.ARTICLE_NUM,
             top_k=config.TOP_K, tfidf_size=config.TFIDF_SIZE,
             max_seq_len=config.SEQUENCE_LEN, max_doc_len=config.DOCUMENT_LEN,
-            hidden_size=config.HIDDEN_SIZE, att_size=config.ATT_SIZE,
-            fc_size_1=config.FC_SIZE_M, fc_size_2=config.FC_SIZE_S,
+            hidden_size=config.HIDDEN_SIZE, att_size=config.ATT_SIZE, fc_size=config.FC_SIZE_S,
             embedding_matrix=embedding_matrix, embedding_trainable=embedding_trainable,
             lr=config.LR, optimizer=config.OPTIMIZER, keep_prob=config.KEEP_PROB, l2_rate=config.L2_RATE,
             is_training=False

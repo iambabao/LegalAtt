@@ -136,6 +136,8 @@ def refine_doc(data, max_seq_len, max_doc_len):
             del doc[beg + 1]
         else:
             beg += 1
+
+    doc = doc[:max_doc_len]
     return doc
 
 

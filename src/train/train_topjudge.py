@@ -11,6 +11,13 @@ from src import util
 from src.model import TopJudge
 
 
+def pad_fact_batch(fact_batch):
+    new_batch = []
+    for fact in fact_batch:
+        new_batch.append(util.pad_sequence(fact, config.SENTENCE_LEN, pad_type='id'))
+    return new_batch
+
+
 def inference(sess, model, batch_iter, out_file, verbose=True):
     task_1_output = []
     task_2_output = []
@@ -22,7 +29,11 @@ def inference(sess, model, batch_iter, out_file, verbose=True):
 
         fact, _, _, _ = list(zip(*batch))
 
+        batch_size = len(fact)
+        fact = pad_fact_batch(fact)
+
         feed_dict = {
+            model.batch_size: batch_size,
             model.fact: fact
         }
 
@@ -37,15 +48,15 @@ def inference(sess, model, batch_iter, out_file, verbose=True):
 
     # 单标签
     # task_1_result = [[np.argmax(s, axis=-1)] for s in task_1_output]
-    # task_2_result = np.argmax(task_2_output, axis=-1)
-    # task_3_result = [[np.argmax(s, axis=-1)] for s in task_3_output]
+    # task_2_result = [[np.argmax(s, axis=-1)] for s in task_2_output]
+    # task_3_result = np.argmax(task_3_output, axis=-1)
     #
     # result = []
     # for t1, t2, t3 in zip(task_1_result, task_2_result, task_3_result):
     #     result.append({
-    #         'articles': t1,
-    #         'imprisonment': util.id_2_imprisonment(t2),
-    #         'accusation': t3
+    #         'accusation': t1,
+    #         'articles': t2,
+    #         'imprisonment': util.id_2_imprisonment(t3),
     #     })
     #
     # print('write file: ', out_file + '.json')
@@ -57,15 +68,15 @@ def inference(sess, model, batch_iter, out_file, verbose=True):
     # 多标签
     for threshold in config.TASK_THRESHOLD:
         task_1_result = [util.get_task_result(s, threshold) for s in task_1_output]
-        task_2_result = np.argmax(task_2_output, axis=-1)
-        task_3_result = [util.get_task_result(s, threshold) for s in task_3_output]
+        task_2_result = [util.get_task_result(s, threshold) for s in task_2_output]
+        task_3_result = np.argmax(task_3_output, axis=-1)
 
         result = []
         for t1, t2, t3 in zip(task_1_result, task_2_result, task_3_result):
             result.append({
-                'articles': t1,
-                'imprisonment': util.id_2_imprisonment(t2),
-                'accusation': t3
+                'accusation': t1,
+                'articles': t2,
+                'imprisonment': util.id_2_imprisonment(t3),
             })
 
         print('write file: ', out_file + '-' + str(threshold) + '.json')
@@ -83,7 +94,11 @@ def run_epoch(sess, model, batch_iter, verbose=True):
     for batch in batch_iter:
         fact, accu, article, imprisonment = list(zip(*batch))
 
+        batch_size = len(fact)
+        fact = pad_fact_batch(fact)
+
         feed_dict = {
+            model.batch_size: batch_size,
             model.fact: fact,
             model.accu: accu,
             model.article: article,
@@ -135,35 +150,38 @@ def read_data(data_file, word_2_id, law_2_id, accu_2_id, max_len):
 
         _fact = item['fact'].strip().lower()
         _fact = util.refine_text(_fact)
-        _fact = util.convert_to_id_list(_fact, word_2_id, max_len=max_len)
+        _fact = util.convert_to_id_list(_fact, word_2_id)
+        _fact = _fact[:max_len]
         fact.append(_fact)
 
-        tmp = item['meta']['accusation']
-        for i in range(len(tmp)):
-            tmp[i] = tmp[i].replace('[', '').replace(']', '')
-        tmp = util.convert_to_id_list(tmp, accu_2_id)
+        temp = item['meta']['accusation']
+        for i in range(len(temp)):
+            temp[i] = temp[i].replace('[', '').replace(']', '')
+        temp = [accu_2_id[v] for v in temp]
         _accu = [0] * config.ACCU_NUM
-        for i in tmp:
+        for i in temp:
             _accu[i] = 1
         accu.append(_accu)
 
-        tmp = [str(t) for t in item['meta']['relevant_articles']]
-        tmp = util.convert_to_id_list(tmp, law_2_id)
+        temp = [str(t) for t in item['meta']['relevant_articles']]
+        temp = [law_2_id[v] for v in temp]
         _article = [0] * config.ARTICLE_NUM
-        for i in tmp:
+        for i in temp:
             _article[i] = 1
         article.append(_article)
 
-        tmp = item['meta']['term_of_imprisonment']
-        tmp = util.imprisonment_2_id(tmp)
+        temp = item['meta']['term_of_imprisonment']
+        temp = util.imprisonment_2_id(temp)
         _imprisonment = [0] * config.IMPRISONMENT_NUM
-        _imprisonment[tmp] = 1
+        _imprisonment[temp] = 1
         imprisonment.append(_imprisonment)
 
     return fact, accu, article, imprisonment
 
 
 def train(judger, config_proto):
+    assert config.CURRENT_MODEL == 'topjudge'
+
     if not os.path.exists(config.MODEL_DIR):
         os.makedirs(config.MODEL_DIR)
     if not os.path.exists(config.RESULT_DIR):
@@ -181,7 +199,7 @@ def train(judger, config_proto):
     with tf.variable_scope('model', reuse=None):
         train_model = TopJudge(
             accu_num=config.ACCU_NUM, article_num=config.ARTICLE_NUM, imprisonment_num=config.IMPRISONMENT_NUM,
-            filter_size=config.FILTER_SIZE, filter_dim=config.FILTER_DIM,
+            max_seq_len=config.SENTENCE_LEN, kernel_size=config.KERNEL_SIZE[1], filter_dim=config.FILTER_DIM,
             hidden_size=config.HIDDEN_SIZE, fc_size=config.FC_SIZE_S,
             embedding_matrix=embedding_matrix, embedding_trainable=embedding_trainable,
             lr=config.LR, optimizer=config.OPTIMIZER, keep_prob=config.KEEP_PROB, l2_rate=config.L2_RATE,
@@ -190,7 +208,7 @@ def train(judger, config_proto):
     with tf.variable_scope('model', reuse=True):
         valid_model = TopJudge(
             accu_num=config.ACCU_NUM, article_num=config.ARTICLE_NUM, imprisonment_num=config.IMPRISONMENT_NUM,
-            filter_size=config.FILTER_SIZE, filter_dim=config.FILTER_DIM,
+            max_seq_len=config.SENTENCE_LEN, kernel_size=config.KERNEL_SIZE[1], filter_dim=config.FILTER_DIM,
             hidden_size=config.HIDDEN_SIZE, fc_size=config.FC_SIZE_S,
             embedding_matrix=embedding_matrix, embedding_trainable=embedding_trainable,
             lr=config.LR, optimizer=config.OPTIMIZER, keep_prob=config.KEEP_PROB, l2_rate=config.L2_RATE,

@@ -11,6 +11,13 @@ from src import util
 from src.model import CNN
 
 
+def pad_fact_batch(fact_batch):
+    new_batch = []
+    for fact in fact_batch:
+        new_batch.append(util.pad_sequence(fact, config.SENTENCE_LEN, pad_type='id'))
+    return new_batch
+
+
 def inference(sess, model, batch_iter, out_file, verbose=True):
     task_1_output = []
     task_2_output = []
@@ -20,32 +27,35 @@ def inference(sess, model, batch_iter, out_file, verbose=True):
         if verbose:
             print('processing batch: %5d' % i, end='\r')
 
-        fact, _, _, _ = list(zip(*batch))
+        fact, _ = list(zip(*batch))
+
+        batch_size = len(fact)
+        fact = pad_fact_batch(fact)
 
         feed_dict = {
             model.fact: fact
         }
 
-        _task_1_output, _task_2_output, _task_3_output = sess.run(
-            [model.task_1_output, model.task_2_output, model.task_3_output],
+        _task_1_output = sess.run(
+            model.task_1_output,
             feed_dict=feed_dict
         )
         task_1_output.extend(_task_1_output)
-        task_2_output.extend(_task_2_output)
-        task_3_output.extend(_task_3_output)
+        task_2_output.extend([[0.0] * config.ARTICLE_NUM] * batch_size)
+        task_3_output.extend([[0.0] * config.IMPRISONMENT_NUM] * batch_size)
     print('\ncost time: %.3fs' % (time.time() - start_time))
 
     # 单标签
     # task_1_result = [[np.argmax(s, axis=-1)] for s in task_1_output]
-    # task_2_result = np.argmax(task_2_output, axis=-1)
-    # task_3_result = [[np.argmax(s, axis=-1)] for s in task_3_output]
+    # task_2_result = [[np.argmax(s, axis=-1)] for s in task_2_output]
+    # task_3_result = np.argmax(task_3_output, axis=-1)
     #
     # result = []
     # for t1, t2, t3 in zip(task_1_result, task_2_result, task_3_result):
     #     result.append({
-    #         'articles': t1,
-    #         'imprisonment': util.id_2_imprisonment(t2),
-    #         'accusation': t3
+    #         'accusation': t1,
+    #         'articles': t2,
+    #         'imprisonment': util.id_2_imprisonment(t3),
     #     })
     #
     # print('write file: ', out_file + '.json')
@@ -57,15 +67,15 @@ def inference(sess, model, batch_iter, out_file, verbose=True):
     # 多标签
     for threshold in config.TASK_THRESHOLD:
         task_1_result = [util.get_task_result(s, threshold) for s in task_1_output]
-        task_2_result = np.argmax(task_2_output, axis=-1)
-        task_3_result = [util.get_task_result(s, threshold) for s in task_3_output]
+        task_2_result = [util.get_task_result(s, threshold) for s in task_2_output]
+        task_3_result = np.argmax(task_3_output, axis=-1)
 
         result = []
         for t1, t2, t3 in zip(task_1_result, task_2_result, task_3_result):
             result.append({
-                'articles': t1,
-                'imprisonment': util.id_2_imprisonment(t2),
-                'accusation': t3
+                'accusation': t1,
+                'articles': t2,
+                'imprisonment': util.id_2_imprisonment(t3),
             })
 
         print('write file: ', out_file + '-' + str(threshold) + '.json')
@@ -81,13 +91,13 @@ def run_epoch(sess, model, batch_iter, verbose=True):
     _global_step = 0
     start_time = time.time()
     for batch in batch_iter:
-        fact, accu, article, imprisonment = list(zip(*batch))
+        fact, accu = list(zip(*batch))
+
+        fact = pad_fact_batch(fact)
 
         feed_dict = {
             model.fact: fact,
-            model.accu: accu,
-            model.article: article,
-            model.imprisonment: imprisonment
+            model.accu: accu
         }
 
         _, _loss, _global_step = sess.run(
@@ -120,7 +130,7 @@ def make_batch_iter(data, batch_size, shuffle):
         yield data[start_index: end_index]
 
 
-def read_data(data_file, word_2_id, law_2_id, accu_2_id, max_len):
+def read_data(data_file, word_2_id, accu_2_id, max_len):
     print('read file: ', data_file)
     with codecs.open(data_file, 'r', encoding='utf-8') as f_in:
         lines = f_in.readlines()
@@ -128,39 +138,25 @@ def read_data(data_file, word_2_id, law_2_id, accu_2_id, max_len):
 
     fact = []
     accu = []
-    article = []
-    imprisonment = []
     for line in lines:
         item = json.loads(line, encoding='utf-8')
 
         _fact = item['fact'].strip().lower()
         _fact = util.refine_text(_fact)
-        _fact = util.convert_to_id_list(_fact, word_2_id, max_len=max_len)
+        _fact = util.convert_to_id_list(_fact, word_2_id)
+        _fact = _fact[:max_len]
         fact.append(_fact)
 
-        tmp = item['meta']['accusation']
-        for i in range(len(tmp)):
-            tmp[i] = tmp[i].replace('[', '').replace(']', '')
-        tmp = util.convert_to_id_list(tmp, accu_2_id)
-        _accu = [0.0] * config.ACCU_NUM
-        for i in tmp:
-            _accu[i] += 1.0 / len(tmp)
+        temp = item['meta']['accusation']
+        for i in range(len(temp)):
+            temp[i] = temp[i].replace('[', '').replace(']', '')
+        temp = [accu_2_id[v] for v in temp]
+        _accu = [0] * config.ACCU_NUM
+        for i in temp:
+            _accu[i] = 1
         accu.append(_accu)
 
-        tmp = [str(t) for t in item['meta']['relevant_articles']]
-        tmp = util.convert_to_id_list(tmp, law_2_id)
-        _article = [0.0] * config.ARTICLE_NUM
-        for i in tmp:
-            _article[i] += 1.0 / len(tmp)
-        article.append(_article)
-
-        tmp = item['meta']['term_of_imprisonment']
-        tmp = util.imprisonment_2_id(tmp)
-        _imprisonment = [0] * config.IMPRISONMENT_NUM
-        _imprisonment[tmp] = 1
-        imprisonment.append(_imprisonment)
-
-    return fact, accu, article, imprisonment
+    return fact, accu
 
 
 def train(judger, config_proto):
@@ -182,8 +178,8 @@ def train(judger, config_proto):
 
     with tf.variable_scope('model', reuse=None):
         train_model = CNN(
-            accu_num=config.ACCU_NUM, article_num=config.ARTICLE_NUM, imprisonment_num=config.IMPRISONMENT_NUM,
-            seq_len=config.SENTENCE_LEN, filter_size=config.FILTER_SIZE,
+            accu_num=config.ACCU_NUM,
+            max_seq_len=config.SENTENCE_LEN, kernel_size=config.KERNEL_SIZE,
             filter_dim=config.FILTER_DIM, fc_size=config.FC_SIZE_S,
             embedding_matrix=embedding_matrix, embedding_trainable=embedding_trainable,
             lr=config.LR, optimizer=config.OPTIMIZER, keep_prob=config.KEEP_PROB, l2_rate=config.L2_RATE,
@@ -191,16 +187,16 @@ def train(judger, config_proto):
         )
     with tf.variable_scope('model', reuse=True):
         valid_model = CNN(
-            accu_num=config.ACCU_NUM, article_num=config.ARTICLE_NUM, imprisonment_num=config.IMPRISONMENT_NUM,
-            seq_len=config.SENTENCE_LEN, filter_size=config.FILTER_SIZE,
+            accu_num=config.ACCU_NUM,
+            max_seq_len=config.SENTENCE_LEN, kernel_size=config.KERNEL_SIZE,
             filter_dim=config.FILTER_DIM, fc_size=config.FC_SIZE_S,
             embedding_matrix=embedding_matrix, embedding_trainable=embedding_trainable,
             lr=config.LR, optimizer=config.OPTIMIZER, keep_prob=config.KEEP_PROB, l2_rate=config.L2_RATE,
             is_training=False
         )
 
-    train_data = read_data(config.TRAIN_DATA, word_2_id, law_2_id, accu_2_id, max_len=config.SENTENCE_LEN)
-    valid_data = read_data(config.VALID_DATA, word_2_id, law_2_id, accu_2_id, max_len=config.SENTENCE_LEN)
+    train_data = read_data(config.TRAIN_DATA, word_2_id, accu_2_id, max_len=config.SENTENCE_LEN)
+    valid_data = read_data(config.VALID_DATA, word_2_id, accu_2_id, max_len=config.SENTENCE_LEN)
 
     best_accu_micro_f1 = 0.0
     best_accu_macro_f1 = 0.0

@@ -4,7 +4,7 @@ import os
 ROOT_DIR = os.path.abspath('.')
 
 # 存储临时文件
-TMP_DIR = os.path.join(ROOT_DIR, 'temp')
+TEMP_DIR = os.path.join(ROOT_DIR, 'temp')
 
 # 存储数据文件
 DATA_DIR = os.path.join(ROOT_DIR, 'data')
@@ -59,7 +59,7 @@ TFIDF_SIZE = 5000
 HIDDEN_SIZE = 100
 
 # CNN
-FILTER_SIZE = [2, 3, 4, 5]
+KERNEL_SIZE = [2, 3, 4, 5]
 FILTER_DIM = 50
 
 # Transformer

@@ -2,13 +2,11 @@ import tensorflow as tf
 
 
 class HAN(object):
-    def __init__(self, accu_num, article_num, imprisonment_num,
+    def __init__(self, accu_num,
                  max_seq_len, max_doc_len, hidden_size, att_size, fc_size,
                  embedding_matrix, embedding_trainable,
                  lr, optimizer, keep_prob, l2_rate, is_training):
         self.accu_num = accu_num
-        self.article_num = article_num
-        self.imprisonment_num = imprisonment_num
 
         self.max_seq_len = max_seq_len
         self.max_doc_len = max_doc_len
@@ -43,10 +41,8 @@ class HAN(object):
         self.fact_seq_len = tf.placeholder(dtype=tf.int32, shape=[None, max_doc_len], name='fact_seq_len')
         self.fact_doc_len = tf.placeholder(dtype=tf.int32, shape=[None], name='fact_doc_len')
         self.accu = tf.placeholder(dtype=tf.float32, shape=[None, accu_num], name='accu')
-        self.article = tf.placeholder(dtype=tf.float32, shape=[None, article_num], name='article')
-        self.imprisonment = tf.placeholder(dtype=tf.float32, shape=[None, imprisonment_num], name='imprisonment')
 
-        # fact_em's shape = [batch_size, seq_len, embedding_size]
+        # fact_em's shape = [batch_size, max_doc_len, max_seq_len, embedding_size]
         with tf.variable_scope('fact_embedding'):
             fact_em = self.fact_embedding_layer()
 
@@ -56,17 +52,11 @@ class HAN(object):
             u_s = tf.get_variable(initializer=self.b_init, shape=[att_size], name='u_s')
             fact_enc = self.fact_encoder(fact_em, self.fact_seq_len, self.fact_doc_len, u_w, u_s)
 
-        with tf.variable_scope('task_1'):
-            self.task_1_output, task_1_loss = self.output_layer(fact_enc, self.article, 'task_1')
-
-        with tf.variable_scope('task_2'):
-            self.task_2_output, task_2_loss = self.output_layer(fact_enc, self.imprisonment, 'task_2')
-
-        with tf.variable_scope('task_3'):
-            self.task_3_output, task_3_loss = self.output_layer(fact_enc, self.accu, 'task_3')
+        with tf.variable_scope('output_layer'):
+            self.task_1_output, task_1_loss = self.output_layer(fact_enc, self.accu, self.accu_num)
 
         with tf.variable_scope('loss'):
-            self.loss = task_3_loss
+            self.loss = task_1_loss
             if self.regularizer is not None:
                 l2_loss = tf.add_n(tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES))
                 self.loss += l2_loss
@@ -97,12 +87,18 @@ class HAN(object):
                 sequence_length=seq_len,
                 dtype=tf.float32
             )
+
             # seq_output's shape = [batch_size, doc_len, seq_len, 2 * hidden_size]
             seq_output = tf.concat([output_fw, output_bw], axis=-1)
             seq_output = tf.reshape(seq_output, [-1, self.max_doc_len, self.max_seq_len, 2 * self.hidden_size])
 
             # att_w's shape = [batch_size, doc_len, seq_len, 1]
-            u = tf.nn.tanh(tf.layers.dense(seq_output, self.att_size, kernel_regularizer=self.regularizer))
+            u = tf.layers.dense(
+                seq_output,
+                self.att_size,
+                tf.nn.tanh,
+                kernel_regularizer=self.regularizer
+            )
             u_att = tf.reshape(u_w, [-1, 1, 1, self.att_size])
             att_w = tf.nn.softmax(tf.reduce_sum(u * u_att, axis=-1, keepdims=True), axis=-1)
 
@@ -121,11 +117,17 @@ class HAN(object):
                 sequence_length=doc_len,
                 dtype=tf.float32
             )
+
             # doc_output's shape = [batch_size, doc_len, 2 * hidden_size]
             doc_output = tf.concat([output_fw, output_bw], axis=-1)
 
             # att_s' shape = [batch_size, doc_len, 1]
-            u = tf.math.tanh(tf.layers.dense(doc_output, self.att_size, kernel_regularizer=self.regularizer))
+            u = tf.layers.dense(
+                doc_output,
+                self.att_size,
+                tf.nn.tanh,
+                kernel_regularizer=self.regularizer
+            )
             u_att = tf.reshape(u_s, [-1, 1, self.att_size])
             att_s = tf.math.softmax(tf.reduce_sum(u * u_att, axis=-1, keepdims=True), axis=-1)
 
@@ -134,29 +136,24 @@ class HAN(object):
 
         return doc_output
 
-    def output_layer(self, inputs, labels, task_id):
-        if task_id == 'task_1':
-            label_num = self.article_num
-        elif task_id == 'task_2':
-            label_num = self.imprisonment_num
-        elif task_id == 'task_3':
-            label_num = self.accu_num
-        else:
-            label_num = -1
-
-        fc_output = tf.layers.dense(inputs, self.fc_size, kernel_regularizer=self.regularizer)
+    def output_layer(self, inputs, labels, label_num):
+        fc_output = tf.layers.dense(
+            inputs,
+            self.fc_size,
+            tf.nn.tanh,
+            kernel_regularizer=self.regularizer
+        )
         if self.is_training and self.keep_prob < 1.0:
             fc_output = tf.nn.dropout(fc_output, keep_prob=self.keep_prob)
 
-        logits = tf.layers.dense(fc_output, label_num, kernel_regularizer=self.regularizer)
-        output = tf.nn.softmax(logits)
-
-        ce_loss = tf.reduce_mean(
-            tf.nn.softmax_cross_entropy_with_logits_v2(
-                labels=labels,
-                logits=logits
-            ) / tf.reduce_sum(labels, axis=-1)
+        logits = tf.layers.dense(
+            fc_output,
+            label_num,
+            kernel_regularizer=self.regularizer
         )
+        output = tf.nn.sigmoid(logits)
+
+        ce_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=labels, logits=logits))
 
         return output, ce_loss
 

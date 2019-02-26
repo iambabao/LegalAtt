@@ -11,6 +11,13 @@ from src import util
 from src.model import Transformer
 
 
+def pad_fact_batch(fact_batch):
+    new_batch = []
+    for fact in fact_batch:
+        new_batch.append(util.pad_sequence(fact, config.SENTENCE_LEN, pad_type='id'))
+    return new_batch
+
+
 def inference(sess, model, batch_iter, out_file, verbose=True):
     task_1_output = []
     task_2_output = []
@@ -22,34 +29,34 @@ def inference(sess, model, batch_iter, out_file, verbose=True):
 
         fact, fact_len = list(zip(*batch))
 
-        max_len = max(fact_len)
-        fact = [util.pad_sequence(s, max_len, pad_type='id') for s in fact]
+        batch_size = len(fact)
+        fact = pad_fact_batch(fact)
 
         feed_dict = {
             model.fact: fact,
             model.fact_len: fact_len
         }
 
-        _task_1_output, _task_2_output, _task_3_output = sess.run(
-            [model.task_1_output, model.task_2_output, model.task_3_output],
+        _task_1_output = sess.run(
+            model.task_1_output,
             feed_dict=feed_dict
         )
         task_1_output.extend(_task_1_output)
-        task_2_output.extend(_task_2_output)
-        task_3_output.extend(_task_3_output)
+        task_2_output.extend([[0.0] * config.ARTICLE_NUM] * batch_size)
+        task_3_output.extend([[0.0] * config.IMPRISONMENT_NUM] * batch_size)
     print('\ncost time: %.3fs' % (time.time() - start_time))
 
     # 单标签
     # task_1_result = [[np.argmax(s, axis=-1)] for s in task_1_output]
-    # task_2_result = np.argmax(task_2_output, axis=-1)
-    # task_3_result = [[np.argmax(s, axis=-1)] for s in task_3_output]
+    # task_2_result = [[np.argmax(s, axis=-1)] for s in task_2_output]
+    # task_3_result = np.argmax(task_3_output, axis=-1)
     #
     # result = []
     # for t1, t2, t3 in zip(task_1_result, task_2_result, task_3_result):
     #     result.append({
-    #         'articles': t1,
-    #         'imprisonment': util.id_2_imprisonment(t2),
-    #         'accusation': t3
+    #         'accusation': t1,
+    #         'articles': t2,
+    #         'imprisonment': util.id_2_imprisonment(t3),
     #     })
     #
     # print('write file: ', out_file + '.json')
@@ -61,15 +68,15 @@ def inference(sess, model, batch_iter, out_file, verbose=True):
     # 多标签
     for threshold in config.TASK_THRESHOLD:
         task_1_result = [util.get_task_result(s, threshold) for s in task_1_output]
-        task_2_result = np.argmax(task_2_output, axis=-1)
-        task_3_result = [util.get_task_result(s, threshold) for s in task_3_output]
+        task_2_result = [util.get_task_result(s, threshold) for s in task_2_output]
+        task_3_result = np.argmax(task_3_output, axis=-1)
 
         result = []
         for t1, t2, t3 in zip(task_1_result, task_2_result, task_3_result):
             result.append({
-                'articles': t1,
-                'imprisonment': util.id_2_imprisonment(t2),
-                'accusation': t3
+                'accusation': t1,
+                'articles': t2,
+                'imprisonment': util.id_2_imprisonment(t3),
             })
 
         print('write file: ', out_file + '-' + str(threshold) + '.json')
@@ -110,8 +117,7 @@ def read_data(data_file, word_2_id, max_len):
         _fact = _fact[:max_len]
         fact.append(_fact)
 
-        _fact_len = len(_fact)
-        fact_len.append(_fact_len)
+        fact_len.append(len(_fact))
 
     return fact, fact_len
 
@@ -130,7 +136,7 @@ def predict(judger, config_proto):
 
     with tf.variable_scope('model', reuse=None):
         test_model = Transformer(
-            accu_num=config.ACCU_NUM, article_num=config.ARTICLE_NUM, imprisonment_num=config.IMPRISONMENT_NUM,
+            accu_num=config.ACCU_NUM, max_seq_len=config.SENTENCE_LEN,
             block_num=config.BLOCK_NUM, head_num=config.HEAD_NUM, model_dim=config.MODEL_DIM, fc_size=config.FC_SIZE_M,
             embedding_matrix=embedding_matrix, embedding_trainable=embedding_trainable,
             lr=config.LR, optimizer=config.OPTIMIZER, keep_prob=config.KEEP_PROB, l2_rate=config.L2_RATE,
