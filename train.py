@@ -9,12 +9,8 @@ if config.CURRENT_MODEL == 'fasttext':
     from src.train.train_fasttext import train
 elif config.CURRENT_MODEL == 'bilstm':
     from src.train.train_bilstm import train
-elif config.CURRENT_MODEL == 'bilstm_att':
-    from src.train.train_bilstm_att import train
 elif config.CURRENT_MODEL == 'bigru':
     from src.train.train_bigru import train
-elif config.CURRENT_MODEL == 'bigru_att':
-    from src.train.train_bigru_att import train
 elif config.CURRENT_MODEL == 'han':
     from src.train.train_han import train
 elif config.CURRENT_MODEL == 'cnn':

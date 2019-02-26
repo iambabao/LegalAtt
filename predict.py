@@ -9,12 +9,8 @@ if config.CURRENT_MODEL == 'fasttext':
     from src.predict.predict_fasttext import predict
 elif config.CURRENT_MODEL == 'bilstm':
     from src.predict.predict_bilstm import predict
-elif config.CURRENT_MODEL == 'bilstm_att':
-    from src.predict.predict_bilstm_att import predict
 elif config.CURRENT_MODEL == 'bigru':
     from src.predict.predict_bigru import predict
-elif config.CURRENT_MODEL == 'bigru_att':
-    from src.predict.predict_bigru_att import predict
 elif config.CURRENT_MODEL == 'han':
     from src.predict.predict_han import predict
 elif config.CURRENT_MODEL == 'cnn':
