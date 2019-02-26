@@ -42,26 +42,26 @@ def inference(sess, model, batch_iter, kb_data, out_file, verbose=True):
             model.law_len: [law_len] * batch_size
         }
 
-        _task_1_output, _task_2_output, _task_3_output = sess.run(
-            [model.task_1_output, model.task_2_output, model.task_3_output],
+        _task_1_output = sess.run(
+            model.task_1_output,
             feed_dict=feed_dict
         )
         task_1_output.extend(_task_1_output)
-        task_2_output.extend(_task_2_output)
-        task_3_output.extend(_task_3_output)
+        task_2_output.extend([[0.0] * config.ARTICLE_NUM] * batch_size)
+        task_3_output.extend([[0.0] * config.IMPRISONMENT_NUM] * batch_size)
     print('\ncost time: %.3fs' % (time.time() - start_time))
 
     # 单标签
     # task_1_result = [[np.argmax(s, axis=-1)] for s in task_1_output]
-    # task_2_result = np.argmax(task_2_output, axis=-1)
-    # task_3_result = [[np.argmax(s, axis=-1)] for s in task_3_output]
+    # task_2_result = [[np.argmax(s, axis=-1)] for s in task_2_output]
+    # task_3_result = np.argmax(task_3_output, axis=-1)
     #
     # result = []
     # for t1, t2, t3 in zip(task_1_result, task_2_result, task_3_result):
     #     result.append({
-    #         'articles': t1,
-    #         'imprisonment': util.id_2_imprisonment(t2),
-    #         'accusation': t3
+    #         'accusation': t1,
+    #         'articles': t2,
+    #         'imprisonment': util.id_2_imprisonment(t3),
     #     })
     #
     # print('write file: ', out_file + '.json')
@@ -73,15 +73,15 @@ def inference(sess, model, batch_iter, kb_data, out_file, verbose=True):
     # 多标签
     for threshold in config.TASK_THRESHOLD:
         task_1_result = [util.get_task_result(s, threshold) for s in task_1_output]
-        task_2_result = np.argmax(task_2_output, axis=-1)
-        task_3_result = [util.get_task_result(s, threshold) for s in task_3_output]
+        task_2_result = [util.get_task_result(s, threshold) for s in task_2_output]
+        task_3_result = np.argmax(task_3_output, axis=-1)
 
         result = []
         for t1, t2, t3 in zip(task_1_result, task_2_result, task_3_result):
             result.append({
-                'articles': t1,
-                'imprisonment': util.id_2_imprisonment(t2),
-                'accusation': t3
+                'accusation': t1,
+                'articles': t2,
+                'imprisonment': util.id_2_imprisonment(t3),
             })
 
         print('write file: ', out_file + '-' + str(threshold) + '.json')
@@ -165,7 +165,7 @@ def predict(judger, config_proto):
 
     with tf.variable_scope('model', reuse=None):
         test_model = LawAtt(
-            accu_num=config.ACCU_NUM, article_num=config.ARTICLE_NUM, imprisonment_num=config.IMPRISONMENT_NUM,
+            accu_num=config.ACCU_NUM, article_num=config.ARTICLE_NUM,
             top_k=config.TOP_K, max_seq_len=config.SENTENCE_LEN,
             hidden_size=config.HIDDEN_SIZE, att_size=config.ATT_SIZE, fc_size=config.FC_SIZE_S,
             embedding_matrix=embedding_matrix, embedding_trainable=embedding_trainable,

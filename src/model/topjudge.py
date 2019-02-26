@@ -51,10 +51,6 @@ class TopJudge(object):
         with tf.variable_scope('fact_encoder'):
             fact_enc = self.fact_encoder(fact_em)
 
-        # task 1: predict relevant articles
-        # task 2: predict term of imprisonment
-        # task 3: predict accusation
-        # task 3 is based on task 1 and task 2
         # enc_outputs' shape = [batch_size, filter_dim, hidden_size]
         # enc_state's shape = [batch_size, hidden_size] * 2
         with tf.variable_scope('task_1'):
@@ -62,7 +58,7 @@ class TopJudge(object):
             self.task_1_output, task_1_loss = self.output_layer(task_1_state.h, self.article, 'task_1')
 
         with tf.variable_scope('task_2'):
-            task_2_outputs, task_2_state = self.lstm_encoder(fact_enc, None)
+            task_2_outputs, task_2_state = self.lstm_encoder(fact_enc, [task_1_state])
             self.task_2_output, task_2_loss = self.output_layer(task_2_state.h, self.imprisonment, 'task_2')
 
         with tf.variable_scope('task_3'):
@@ -115,7 +111,7 @@ class TopJudge(object):
         if initial_state_list is not None:
             new_c = []
             new_h = []
-            for i, state in enumerate(initial_state_list):
+            for state in initial_state_list:
                 c = tf.layers.dense(state.c, self.hidden_size, kernel_regularizer=self.regularizer)
                 new_c.append(c)
 
