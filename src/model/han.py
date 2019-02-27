@@ -93,12 +93,7 @@ class HAN(object):
             seq_output = tf.reshape(seq_output, [-1, self.max_doc_len, self.max_seq_len, 2 * self.hidden_size])
 
             # att_w's shape = [batch_size, doc_len, seq_len, 1]
-            u = tf.layers.dense(
-                seq_output,
-                self.att_size,
-                tf.nn.tanh,
-                kernel_regularizer=self.regularizer
-            )
+            u = tf.layers.dense(seq_output, self.att_size, tf.nn.tanh, kernel_regularizer=self.regularizer)
             u_att = tf.reshape(u_w, [-1, 1, 1, self.att_size])
             att_w = tf.nn.softmax(tf.reduce_sum(u * u_att, axis=-1, keepdims=True), axis=-1)
 
@@ -122,12 +117,7 @@ class HAN(object):
             doc_output = tf.concat([output_fw, output_bw], axis=-1)
 
             # att_s' shape = [batch_size, doc_len, 1]
-            u = tf.layers.dense(
-                doc_output,
-                self.att_size,
-                tf.nn.tanh,
-                kernel_regularizer=self.regularizer
-            )
+            u = tf.layers.dense(doc_output, self.att_size, tf.nn.tanh, kernel_regularizer=self.regularizer)
             u_att = tf.reshape(u_s, [-1, 1, self.att_size])
             att_s = tf.math.softmax(tf.reduce_sum(u * u_att, axis=-1, keepdims=True), axis=-1)
 
@@ -137,20 +127,11 @@ class HAN(object):
         return doc_output
 
     def output_layer(self, inputs, labels, label_num):
-        fc_output = tf.layers.dense(
-            inputs,
-            self.fc_size,
-            tf.nn.tanh,
-            kernel_regularizer=self.regularizer
-        )
+        fc_output = tf.layers.dense(inputs, self.fc_size, kernel_regularizer=self.regularizer)
         if self.is_training and self.keep_prob < 1.0:
             fc_output = tf.nn.dropout(fc_output, keep_prob=self.keep_prob)
 
-        logits = tf.layers.dense(
-            fc_output,
-            label_num,
-            kernel_regularizer=self.regularizer
-        )
+        logits = tf.layers.dense(fc_output, label_num, kernel_regularizer=self.regularizer)
         output = tf.nn.sigmoid(logits)
 
         ce_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=labels, logits=logits))

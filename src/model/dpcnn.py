@@ -71,12 +71,7 @@ class DPCNN(object):
 
     def fact_encoder(self, inputs, seq_len):
         output_len = seq_len
-        cur_output = tf.layers.dense(
-            inputs,
-            self.filter_dim,
-            tf.nn.tanh,
-            kernel_regularizer=self.regularizer
-        )
+        cur_output = tf.layers.dense(inputs, self.filter_dim, tf.nn.tanh, kernel_regularizer=self.regularizer)
         while output_len > 1:
             pre_output = cur_output
 
@@ -105,20 +100,11 @@ class DPCNN(object):
         return cur_output
 
     def output_layer(self, inputs, labels, label_num):
-        fc_output = tf.layers.dense(
-            inputs,
-            self.fc_size,
-            tf.nn.tanh,
-            kernel_regularizer=self.regularizer
-        )
+        fc_output = tf.layers.dense(inputs, self.fc_size, kernel_regularizer=self.regularizer)
         if self.is_training and self.keep_prob < 1.0:
             fc_output = tf.nn.dropout(fc_output, keep_prob=self.keep_prob)
 
-        logits = tf.layers.dense(
-            fc_output,
-            label_num,
-            kernel_regularizer=self.regularizer
-        )
+        logits = tf.layers.dense(fc_output, label_num, kernel_regularizer=self.regularizer)
         output = tf.nn.sigmoid(logits)
 
         ce_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=labels, logits=logits))
