@@ -35,7 +35,6 @@ def inference(sess, model, batch_iter, kb_data, out_file, verbose=True):
         fact = pad_fact_batch(fact)
 
         feed_dict = {
-            model.batch_size: [batch_size],
             model.fact: fact,
             model.fact_len: fact_len,
             model.law_kb: [law_kb] * batch_size,
@@ -125,23 +124,23 @@ def read_law_kb(data_dir, id_2_law, word_2_id, max_len):
 
 
 def read_data(data_file, word_2_id, max_len):
-    print('read file: ', data_file)
-    with codecs.open(data_file, 'r', encoding='utf-8') as f_in:
-        lines = f_in.readlines()
-    print('data size: ', len(lines))
-
     fact = []
     fact_len = []
-    for line in lines:
-        item = json.loads(line, encoding='utf-8')
 
-        _fact = item['fact'].strip().lower()
-        _fact = util.refine_text(_fact)
-        _fact = util.convert_to_id_list(_fact, word_2_id)
-        _fact = _fact[:max_len]
-        fact.append(_fact)
+    print('read file: ', data_file)
+    with codecs.open(data_file, 'r', encoding='utf-8') as f_in:
+        for line in f_in:
+            item = json.loads(line, encoding='utf-8')
 
-        fact_len.append(len(_fact))
+            _fact = item['fact'].strip().lower()
+            _fact = util.refine_text(_fact)
+            _fact = util.convert_to_id_list(_fact, word_2_id)
+            _fact = _fact[:max_len]
+            fact.append(_fact)
+
+            fact_len.append(len(_fact))
+
+    print('data size: ', len(fact))
 
     return fact, fact_len
 
@@ -167,7 +166,8 @@ def predict(judger, config_proto):
         test_model = LawAtt(
             accu_num=config.ACCU_NUM, article_num=config.ARTICLE_NUM,
             top_k=config.TOP_K, max_seq_len=config.SENTENCE_LEN,
-            hidden_size=config.HIDDEN_SIZE, att_size=config.ATT_SIZE, fc_size=config.FC_SIZE_S,
+            hidden_size=config.HIDDEN_SIZE, att_size=config.ATT_SIZE,
+            kernel_size=config.KERNEL_SIZE, filter_dim=config.FILTER_DIM, fc_size=config.FC_SIZE_S,
             embedding_matrix=embedding_matrix, embedding_trainable=embedding_trainable,
             lr=config.LR, optimizer=config.OPTIMIZER, keep_prob=config.KEEP_PROB, l2_rate=config.L2_RATE,
             is_training=False

@@ -2,17 +2,19 @@ import tensorflow as tf
 
 
 class LawAtt(object):
-    def __init__(self, accu_num, article_num,
-                 top_k, max_seq_len, hidden_size, att_size, fc_size,
+    def __init__(self, accu_num, article_num, top_k, max_seq_len,
+                 hidden_size, att_size, kernel_size, filter_dim, fc_size,
                  embedding_matrix, embedding_trainable,
                  lr, optimizer, keep_prob, l2_rate, is_training):
         self.accu_num = accu_num
         self.article_num = article_num
-
         self.top_k = top_k
         self.max_seq_len = max_seq_len
+
         self.hidden_size = hidden_size
         self.att_size = att_size
+        self.kernel_size = kernel_size
+        self.filter_dim = filter_dim
         self.fc_size = fc_size
 
         self.embedding_matrix = tf.get_variable(
@@ -38,7 +40,6 @@ class LawAtt(object):
         else:
             self.regularizer = None
 
-        self.batch_size = tf.placeholder(dtype=tf.int32, shape=[1], name='batch_size')
         self.fact = tf.placeholder(dtype=tf.int32, shape=[None, max_seq_len], name='fact')
         self.fact_len = tf.placeholder(dtype=tf.int32, shape=[None], name='fact_len')
         self.law_kb = tf.placeholder(dtype=tf.int32, shape=[None, article_num, max_seq_len], name='law_kb')
@@ -50,33 +51,37 @@ class LawAtt(object):
             fact_em = self.fact_embedding_layer()
 
         with tf.variable_scope('fact_encoder'):
-            # fact_enc's shape = [batch_size, max_seq_len, 2 * hidden_size]
-            fact_enc = self.fact_encoder(fact_em, self.fact_len)
+            fact_enc = self.cnn_encoder(fact_em)
 
         with tf.variable_scope('article_extractor'):
             # art_score's shape = [batch_size, article_num]
+            # top_k_score's shape = [batch_size, top_k]
             # top_k_indices' shape = [batch_size, top_k]
-            art_score, top_k_indices = self.get_top_k_indices(fact_enc)
+            self.art_score, top_k_score, top_k_indices = self.get_top_k_indices(fact_enc)
 
-            # art's shape = [batch_size, top_k, max_seq_len]
-            # art_len's shape = [batch_size, top_k]
+            # top_k_art's shape = [batch_size, top_k, max_seq_len]
+            # top_k_art_len's shape = [batch_size, top_k]
             top_k_art, top_k_art_len = self.get_top_k_articles(top_k_indices)
 
         with tf.variable_scope('article_embedding'):
             top_k_art_em = self.article_embedding_layer(top_k_art)
 
-        # set reuse to tf.AUTO_REUSE to allow all articles use the same gru
         with tf.variable_scope('article_encoder', reuse=tf.AUTO_REUSE):
             art_em_splits = tf.split(top_k_art_em, self.top_k, axis=1)
             art_len_splits = tf.split(top_k_art_len, self.top_k, axis=1)
 
-            # top_k_art_enc's shape = [batch_size, 2 * hidden_size] * top_k
-            top_k_art_enc = []
+            art_enc_splits = []
             for art_em, art_len in zip(art_em_splits, art_len_splits):
-                enc_output = self.article_encoder(art_em, art_len)
-                top_k_art_enc.append(enc_output)
+                art_em = tf.reshape(art_em, [-1, self.max_seq_len, self.embedding_size])
+                art_len = tf.reshape(art_len, [-1])
+
+                art_enc = self.cnn_encoder(art_em)
+                art_enc_splits.append(art_enc)
 
         with tf.variable_scope('attention_layer'):
+            relevant_score = tf.nn.relu(top_k_score)
+            score_splits = tf.split(relevant_score, self.top_k, axis=1)
+
             key = tf.layers.dense(
                 fact_enc,
                 self.att_size,
@@ -85,35 +90,31 @@ class LawAtt(object):
                 kernel_regularizer=self.regularizer
             )
 
-            w = tf.get_variable(
-                initializer=self.w_init,
-                shape=[2 * self.hidden_size, self.att_size],
-                dtype=tf.float32,
-                name='w'
-            )
-            # att_matrix's shape = [batch_size, top_k, max_seq_len]
-            att_matrix = []
-            for art_enc in top_k_art_enc:
-                query = tf.nn.tanh(tf.matmul(art_enc, w))
-                att = self.get_attention(key, query)
-                att = tf.expand_dims(att, axis=1)
-                att_matrix.append(att)
-            att_matrix = tf.concat(att_matrix, axis=1)
+            law_atts = []
+            with tf.variable_scope('get_attention', reuse=tf.AUTO_REUSE):
+                for art_enc, art_len, score in zip(art_enc_splits, art_len_splits, score_splits):
+                    art_len = tf.reshape(art_len, [-1])
+                    score = tf.reshape(score, [-1, 1, 1])
 
-            # fact_enc's shape = [batch_size, 2 * hidden_size]
-            fact_enc = tf.matmul(att_matrix, fact_enc)
-            fact_enc = tf.reduce_max(fact_enc, axis=1)
+                    query = tf.layers.dense(
+                        art_enc,
+                        self.att_size,
+                        tf.nn.tanh,
+                        use_bias=False,
+                        kernel_regularizer=self.regularizer
+                    )
+
+                    law_att = score * self.get_attention(query, key, art_len, self.fact_len)
+                    law_atts.append(law_att)
+
+            fact_enc_with_att = [tf.matmul(law_att, fact_enc) for law_att in law_atts]
+            fact_enc_with_att = tf.reduce_max(tf.add_n(fact_enc_with_att), axis=-2)
 
         with tf.variable_scope('output_layer'):
-            self.task_1_output, task_1_loss = self.output_layer(fact_enc, self.accu, self.accu_num)
+            self.task_1_output, task_1_loss = self.output_layer(fact_enc_with_att, self.accu, self.accu_num)
 
         with tf.variable_scope('loss'):
-            art_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.article, logits=art_score))
-
-            # penalty_matrix = tf.matmul(att_matrix, att_matrix, transpose_b=True)
-            # penalty_matrix = penalty_matrix - tf.linalg.eye(self.top_k, batch_shape=self.batch_size)
-            # fro_norm = tf.linalg.norm(penalty_matrix, ord='fro', axis=[1, 2])
-            # att_loss = tf.reduce_mean(fro_norm * fro_norm)
+            art_loss = tf.reduce_mean(tf.losses.hinge_loss(labels=self.article, logits=self.art_score))
 
             self.loss = task_1_loss + art_loss
             if self.regularizer is not None:
@@ -132,9 +133,10 @@ class LawAtt(object):
 
         return fact_em
 
-    def fact_encoder(self, inputs, seq_len):
+    def rnn_encoder(self, inputs, seq_len):
         cell_fw = tf.nn.rnn_cell.GRUCell(self.hidden_size)
         cell_bw = tf.nn.rnn_cell.GRUCell(self.hidden_size)
+
         (output_fw, output_bw), _ = tf.nn.bidirectional_dynamic_rnn(
             cell_fw=cell_fw,
             cell_bw=cell_bw,
@@ -143,20 +145,42 @@ class LawAtt(object):
             dtype=tf.float32
         )
 
+        # output's shape = [batch_size, seq_len, 2 * hidden_size]
         output = tf.concat([output_fw, output_bw], axis=-1)
 
         return output
 
+    def cnn_encoder(self, inputs):
+        enc_output = []
+        for kernel_size in self.kernel_size:
+            with tf.variable_scope('conv_' + str(kernel_size)):
+                # conv's shape = [batch_size, seq_len, filter_dim]
+                conv = tf.layers.conv1d(
+                    inputs,
+                    filters=self.filter_dim,
+                    kernel_size=kernel_size,
+                    padding='same',
+                    activation=tf.nn.relu,
+                    kernel_regularizer=self.regularizer
+                )
+
+                enc_output.append(conv)
+
+        # enc_output's shape = [batch_size, seq_len, len(kernel_size) * filter_dim]
+        enc_output = tf.concat(enc_output, axis=-1)
+
+        return enc_output
+
     def get_top_k_indices(self, inputs):
-        inputs = tf.reduce_sum(inputs, axis=-2)
+        inputs = tf.reduce_max(inputs, axis=-2)
         scores = tf.layers.dense(inputs, self.article_num, tf.nn.tanh, kernel_regularizer=self.regularizer)
 
         if self.is_training:
-            _, indices = tf.math.top_k(self.article, k=self.top_k)
+            top_k_score, top_k_indices = tf.math.top_k(self.article, k=self.top_k)
         else:
-            _, indices = tf.math.top_k(scores, k=self.top_k)
+            top_k_score, top_k_indices = tf.math.top_k(scores, k=self.top_k)
 
-        return scores, indices
+        return scores, top_k_score, top_k_indices
 
     def get_top_k_articles(self, top_k_indices):
         art = tf.batch_gather(self.law_kb, indices=top_k_indices)
@@ -171,27 +195,15 @@ class LawAtt(object):
 
         return article_em
 
-    def article_encoder(self, inputs, seq_len):
-        inputs = tf.reshape(inputs, [-1, self.max_seq_len, self.embedding_size])
-        seq_len = tf.reshape(seq_len, [-1])
+    def get_attention(self, query, key, query_len, key_len):
+        att = tf.nn.softmax(tf.matmul(query, key, transpose_b=True), axis=-1)
 
-        cell_fw = tf.nn.rnn_cell.GRUCell(self.hidden_size)
-        cell_bw = tf.nn.rnn_cell.GRUCell(self.hidden_size)
-        _, (state_fw, state_bw) = tf.nn.bidirectional_dynamic_rnn(
-            cell_fw=cell_fw,
-            cell_bw=cell_bw,
-            inputs=inputs,
-            sequence_length=seq_len,
-            dtype=tf.float32
-        )
+        mask_query = tf.sequence_mask(query_len, maxlen=self.max_seq_len, dtype=tf.float32)
+        mask_key = tf.sequence_mask(key_len, maxlen=self.max_seq_len, dtype=tf.float32)
+        mask = tf.matmul(tf.expand_dims(mask_query, axis=-1), tf.expand_dims(mask_key, axis=-2))
 
-        output = tf.concat([state_fw, state_bw], axis=-1)
-
-        return output
-
-    def get_attention(self, key, query):
-        query = tf.reshape(query, [-1, 1, self.att_size])
-        att = tf.math.softmax(tf.reduce_sum(key * query, axis=-1), axis=-1)
+        # att's shape = [batch_size, seq_len, seq_len]
+        att = mask * att
 
         return att
 

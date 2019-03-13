@@ -35,19 +35,19 @@ def inference(sess, model, batch_iter, kb_data, out_file, verbose=True):
         fact = pad_fact_batch(fact)
 
         feed_dict = {
-            model.batch_size: [batch_size],
             model.fact: fact,
             model.fact_len: fact_len,
             model.law_kb: [law_kb] * batch_size,
             model.law_len: [law_len] * batch_size
         }
 
-        _task_1_output = sess.run(
-            model.task_1_output,
+        _task_1_output, _task_2_output = sess.run(
+            [model.task_1_output, model.art_score],
             feed_dict=feed_dict
         )
+
         task_1_output.extend(_task_1_output)
-        task_2_output.extend([[0.0] * config.ARTICLE_NUM] * batch_size)
+        task_2_output.extend(_task_2_output)
         task_3_output.extend([[0.0] * config.IMPRISONMENT_NUM] * batch_size)
     print('\ncost time: %.3fs' % (time.time() - start_time))
 
@@ -77,11 +77,12 @@ def inference(sess, model, batch_iter, kb_data, out_file, verbose=True):
         task_3_result = np.argmax(task_3_output, axis=-1)
 
         result = []
-        for t1, t2, t3 in zip(task_1_result, task_2_result, task_3_result):
+        for t1, t2, t3, ttt in zip(task_1_result, task_2_result, task_3_result, task_2_output):
             result.append({
                 'accusation': t1,
                 'articles': t2,
                 'imprisonment': util.id_2_imprisonment(t3),
+                'ttt': ttt
             })
 
         print('write file: ', out_file + '-' + str(threshold) + '.json')
@@ -105,7 +106,6 @@ def run_epoch(sess, model, batch_iter, kb_data, verbose=True):
         fact = pad_fact_batch(fact)
 
         feed_dict = {
-            model.batch_size: [batch_size],
             model.fact: fact,
             model.fact_len: fact_len,
             model.law_kb: [law_kb] * batch_size,
@@ -121,7 +121,7 @@ def run_epoch(sess, model, batch_iter, kb_data, verbose=True):
 
         steps += 1
         total_loss += _loss
-        if verbose and steps % 100 == 1:
+        if verbose and steps % 1000 == 1:
             current_time = time.time()
             print('After %5d batch(es), global step is %5d, loss is %.3f, cost time %.3fs'
                   % (steps, _global_step, _loss, current_time - start_time))
@@ -164,41 +164,41 @@ def read_law_kb(data_dir, id_2_law, word_2_id, max_len):
 
 
 def read_data(data_file, word_2_id, law_2_id, accu_2_id, max_len):
-    print('read file: ', data_file)
-    with codecs.open(data_file, 'r', encoding='utf-8') as f_in:
-        lines = f_in.readlines()
-    print('data size: ', len(lines))
-
     fact = []
     fact_len = []
     accu = []
     article = []
-    for line in lines:
-        item = json.loads(line, encoding='utf-8')
 
-        _fact = item['fact'].strip().lower()
-        _fact = util.refine_text(_fact)
-        _fact = util.convert_to_id_list(_fact, word_2_id)
-        _fact = _fact[:max_len]
-        fact.append(_fact)
+    print('read file: ', data_file)
+    with codecs.open(data_file, 'r', encoding='utf-8') as f_in:
+        for line in f_in:
+            item = json.loads(line, encoding='utf-8')
 
-        fact_len.append(len(_fact))
+            _fact = item['fact'].strip().lower()
+            _fact = util.refine_text(_fact)
+            _fact = util.convert_to_id_list(_fact, word_2_id)
+            _fact = _fact[:max_len]
+            fact.append(_fact)
 
-        temp = item['meta']['accusation']
-        for i in range(len(temp)):
-            temp[i] = temp[i].replace('[', '').replace(']', '')
-        temp = [accu_2_id[v] for v in temp]
-        _accu = [0] * config.ACCU_NUM
-        for i in temp:
-            _accu[i] = 1
-        accu.append(_accu)
+            fact_len.append(len(_fact))
 
-        temp = [str(t) for t in item['meta']['relevant_articles']]
-        temp = [law_2_id[v] for v in temp]
-        _article = [0] * config.ARTICLE_NUM
-        for i in temp:
-            _article[i] = 1
-        article.append(_article)
+            temp = item['meta']['accusation']
+            for i in range(len(temp)):
+                temp[i] = temp[i].replace('[', '').replace(']', '')
+            temp = [accu_2_id[v] for v in temp]
+            _accu = [0] * config.ACCU_NUM
+            for i in temp:
+                _accu[i] = 1
+            accu.append(_accu)
+
+            temp = [str(t) for t in item['meta']['relevant_articles']]
+            temp = [law_2_id[v] for v in temp]
+            _article = [0] * config.ARTICLE_NUM
+            for i in temp:
+                _article[i] = 1
+            article.append(_article)
+
+    print('data size: ', len(fact))
 
     return fact, fact_len, accu, article
 
@@ -224,7 +224,8 @@ def train(judger, config_proto):
         train_model = LawAtt(
             accu_num=config.ACCU_NUM, article_num=config.ARTICLE_NUM,
             top_k=config.TOP_K, max_seq_len=config.SENTENCE_LEN,
-            hidden_size=config.HIDDEN_SIZE, att_size=config.ATT_SIZE, fc_size=config.FC_SIZE_S,
+            hidden_size=config.HIDDEN_SIZE, att_size=config.ATT_SIZE,
+            kernel_size=config.KERNEL_SIZE, filter_dim=config.FILTER_DIM, fc_size=config.FC_SIZE_S,
             embedding_matrix=embedding_matrix, embedding_trainable=embedding_trainable,
             lr=config.LR, optimizer=config.OPTIMIZER, keep_prob=config.KEEP_PROB, l2_rate=config.L2_RATE,
             is_training=True
@@ -233,7 +234,8 @@ def train(judger, config_proto):
         valid_model = LawAtt(
             accu_num=config.ACCU_NUM, article_num=config.ARTICLE_NUM,
             top_k=config.TOP_K, max_seq_len=config.SENTENCE_LEN,
-            hidden_size=config.HIDDEN_SIZE, att_size=config.ATT_SIZE, fc_size=config.FC_SIZE_S,
+            hidden_size=config.HIDDEN_SIZE, att_size=config.ATT_SIZE,
+            kernel_size=config.KERNEL_SIZE, filter_dim=config.FILTER_DIM, fc_size=config.FC_SIZE_S,
             embedding_matrix=embedding_matrix, embedding_trainable=embedding_trainable,
             lr=config.LR, optimizer=config.OPTIMIZER, keep_prob=config.KEEP_PROB, l2_rate=config.L2_RATE,
             is_training=False

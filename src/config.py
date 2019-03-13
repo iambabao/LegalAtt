@@ -25,7 +25,7 @@ PLAIN_TEXT = os.path.join(EMBEDDING_DIR, 'plain_text.txt')
 WORD2VEC_MODEL = os.path.join(EMBEDDING_DIR, 'word2vec.model')
 TFIDF_MODEL = os.path.join(EMBEDDING_DIR, 'tfidf.model')
 
-CURRENT_MODEL = 'cnn'
+CURRENT_MODEL = 'law_att'
 
 # 存储训练模型
 MODEL_DIR = os.path.join(ROOT_DIR, 'model', CURRENT_MODEL)
