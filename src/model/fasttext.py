@@ -35,6 +35,7 @@ class FastText(object):
             self.regularizer = None
 
         self.fact = tf.placeholder(dtype=tf.int32, shape=[None, max_seq_len], name='fact')
+        self.fact_len = tf.placeholder(dtype=tf.int32, shape=[None], name='fact_len')
         self.accu = tf.placeholder(dtype=tf.float32, shape=[None, accu_num], name='accu')
 
         # fact_em's shape = [batch_size, max_seq_len, embedding_size]
@@ -42,7 +43,7 @@ class FastText(object):
             fact_em = self.fact_embedding_layer()
 
         with tf.variable_scope('fact_encoder'):
-            fact_enc = tf.reduce_mean(fact_em, axis=-2)
+            fact_enc = tf.reduce_sum(fact_em, axis=-2) / tf.reshape(tf.cast(self.fact_len, tf.float32), [-1, 1])
 
         with tf.variable_scope('output_layer'):
             self.task_1_output, task_1_loss = self.output_layer(fact_enc, self.accu, self.accu_num)

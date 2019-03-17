@@ -27,13 +27,14 @@ def inference(sess, model, batch_iter, out_file, verbose=True):
         if verbose:
             print('processing batch: %5d' % i, end='\r')
 
-        fact, _ = list(zip(*batch))
+        fact, fact_len, _ = list(zip(*batch))
 
         batch_size = len(fact)
         fact = pad_fact_batch(fact)
 
         feed_dict = {
-            model.fact: fact
+            model.fact: fact,
+            model.fact_len: fact_len
         }
 
         _task_1_output = sess.run(
@@ -91,12 +92,13 @@ def run_epoch(sess, model, batch_iter, verbose=True):
     _global_step = 0
     start_time = time.time()
     for batch in batch_iter:
-        fact, accu = list(zip(*batch))
+        fact, fact_len, accu = list(zip(*batch))
 
         fact = pad_fact_batch(fact)
 
         feed_dict = {
             model.fact: fact,
+            model.fact_len: fact_len,
             model.accu: accu
         }
 
@@ -137,6 +139,7 @@ def read_data(data_file, word_2_id, accu_2_id, max_len):
     print('data size: ', len(lines))
 
     fact = []
+    fact_len = []
     accu = []
     for line in lines:
         item = json.loads(line, encoding='utf-8')
@@ -147,6 +150,8 @@ def read_data(data_file, word_2_id, accu_2_id, max_len):
         _fact = _fact[:max_len]
         fact.append(_fact)
 
+        fact_len.append(len(_fact))
+
         temp = item['meta']['accusation']
         for i in range(len(temp)):
             temp[i] = temp[i].replace('[', '').replace(']', '')
@@ -156,7 +161,7 @@ def read_data(data_file, word_2_id, accu_2_id, max_len):
             _accu[i] = 1
         accu.append(_accu)
 
-    return fact, accu
+    return fact, fact_len, accu
 
 
 def train(judger, config_proto):

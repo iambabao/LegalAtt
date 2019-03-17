@@ -27,11 +27,14 @@ def inference(sess, model, batch_iter, out_file, verbose=True):
         if verbose:
             print('processing batch: %5d' % i, end='\r')
 
+        fact, fact_len = list(zip(*batch))
+
         batch_size = len(batch)
-        fact = pad_fact_batch(batch)
+        fact = pad_fact_batch(fact)
 
         feed_dict = {
-            model.fact: fact
+            model.fact: fact,
+            model.fact_len: fact_len
         }
 
         _task_1_output = sess.run(
@@ -104,6 +107,7 @@ def read_data(data_file, word_2_id, max_len):
     print('data size: ', len(lines))
 
     fact = []
+    fact_len = []
     for line in lines:
         item = json.loads(line, encoding='utf-8')
 
@@ -113,7 +117,9 @@ def read_data(data_file, word_2_id, max_len):
         _fact = _fact[:max_len]
         fact.append(_fact)
 
-    return fact
+        fact_len.append(len(_fact))
+
+    return fact, fact_len
 
 
 def predict(judger, config_proto):
@@ -145,7 +151,7 @@ def predict(judger, config_proto):
         saver.restore(sess, config.MODEL_FILE)
 
         print('==========  Test  ==========')
-        test_batch_iter = make_batch_iter(test_data, config.BATCH_SIZE, shuffle=False)
+        test_batch_iter = make_batch_iter(list(zip(*test_data)), config.BATCH_SIZE, shuffle=False)
         inference(sess, test_model, test_batch_iter, config.TEST_RESULT, verbose=True)
 
         # 单标签
