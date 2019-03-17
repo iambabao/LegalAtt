@@ -42,11 +42,12 @@ def inference(sess, model, batch_iter, kb_data, out_file, verbose=True):
         }
 
         _task_1_output, _task_2_output = sess.run(
-            [model.task_1_output, model.art_score],
+            [model.task_1_output, model.task_2_output],
             feed_dict=feed_dict
         )
 
         task_1_output.extend(_task_1_output)
+        # task_1_output.extend([[0.0] * config.ACCU_NUM] * batch_size)
         task_2_output.extend(_task_2_output)
         task_3_output.extend([[0.0] * config.IMPRISONMENT_NUM] * batch_size)
     print('\ncost time: %.3fs' % (time.time() - start_time))
@@ -77,12 +78,11 @@ def inference(sess, model, batch_iter, kb_data, out_file, verbose=True):
         task_3_result = np.argmax(task_3_output, axis=-1)
 
         result = []
-        for t1, t2, t3, ttt in zip(task_1_result, task_2_result, task_3_result, task_2_output):
+        for t1, t2, t3 in zip(task_1_result, task_2_result, task_3_result):
             result.append({
                 'accusation': t1,
                 'articles': t2,
-                'imprisonment': util.id_2_imprisonment(t3),
-                'ttt': ttt
+                'imprisonment': util.id_2_imprisonment(t3)
             })
 
         print('write file: ', out_file + '-' + str(threshold) + '.json')

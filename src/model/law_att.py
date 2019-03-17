@@ -57,7 +57,7 @@ class LawAtt(object):
             # art_score's shape = [batch_size, article_num]
             # top_k_score's shape = [batch_size, top_k]
             # top_k_indices' shape = [batch_size, top_k]
-            self.art_score, top_k_score, top_k_indices = self.get_top_k_indices(fact_enc)
+            art_score, top_k_score, top_k_indices = self.get_top_k_indices(fact_enc)
 
             # top_k_art's shape = [batch_size, top_k, max_seq_len]
             # top_k_art_len's shape = [batch_size, top_k]
@@ -79,7 +79,9 @@ class LawAtt(object):
                 art_enc_splits.append(art_enc)
 
         with tf.variable_scope('attention_layer'):
-            relevant_score = tf.nn.relu(top_k_score)
+            ones = tf.ones_like(top_k_score, dtype=tf.float32)
+            zeros = tf.zeros_like(top_k_score, dtype=tf.float32)
+            relevant_score = tf.where(top_k_score > 0.3, ones, zeros)
             score_splits = tf.split(relevant_score, self.top_k, axis=1)
 
             key = tf.layers.dense(
@@ -107,14 +109,26 @@ class LawAtt(object):
                     law_att = score * self.get_attention(query, key, art_len, self.fact_len)
                     law_atts.append(law_att)
 
+            batch_weight = tf.reshape(tf.reduce_sum(relevant_score, axis=-1), [-1, 1, 1])
+            ones = tf.ones_like(batch_weight, dtype=tf.float32)
+            batch_weight = tf.where(batch_weight > 0, batch_weight, ones)
+
             fact_enc_with_att = [tf.matmul(law_att, fact_enc) for law_att in law_atts]
-            fact_enc_with_att = tf.reduce_max(tf.add_n(fact_enc_with_att), axis=-2)
+            fact_enc_with_att = tf.add_n(fact_enc_with_att) / batch_weight
+
+        with tf.variable_scope('highway'):
+            fact_enc_with_att = fact_enc_with_att + fact_enc
+            fact_enc_with_att = tf.reduce_max(fact_enc_with_att, axis=-2)
 
         with tf.variable_scope('output_layer'):
             self.task_1_output, task_1_loss = self.output_layer(fact_enc_with_att, self.accu, self.accu_num)
 
+            ones = tf.ones_like(art_score, dtype=tf.float32)
+            zeros = tf.zeros_like(art_score, dtype=tf.float32)
+            self.task_2_output = tf.where(tf.nn.sigmoid(art_score) > 0.3, ones, zeros)
+
         with tf.variable_scope('loss'):
-            art_loss = tf.reduce_mean(tf.losses.hinge_loss(labels=self.article, logits=self.art_score))
+            art_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.article, logits=art_score))
 
             self.loss = task_1_loss + art_loss
             if self.regularizer is not None:
@@ -173,7 +187,7 @@ class LawAtt(object):
 
     def get_top_k_indices(self, inputs):
         inputs = tf.reduce_max(inputs, axis=-2)
-        scores = tf.layers.dense(inputs, self.article_num, tf.nn.tanh, kernel_regularizer=self.regularizer)
+        scores = tf.layers.dense(inputs, self.article_num, kernel_regularizer=self.regularizer)
 
         if self.is_training:
             top_k_score, top_k_indices = tf.math.top_k(self.article, k=self.top_k)
