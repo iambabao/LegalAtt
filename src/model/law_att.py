@@ -52,6 +52,8 @@ class LawAtt(object):
 
         with tf.variable_scope('fact_encoder'):
             fact_enc = self.cnn_encoder(fact_em)
+            # fact_enc = self.lstm_encoder(fact_em, self.fact_len)
+            # fact_enc = self.gru_encoder(fact_em, self.fact_len)
 
         with tf.variable_scope('article_extractor'):
             # art_score's shape = [batch_size, article_num]
@@ -76,6 +78,8 @@ class LawAtt(object):
                 art_len = tf.reshape(art_len, [-1])
 
                 art_enc = self.cnn_encoder(art_em)
+                # art_enc = self.lstm_encoder(art_em, art_len)
+                # art_enc = self.gru_encoder(art_em, art_len)
                 art_enc_splits.append(art_enc)
 
         with tf.variable_scope('attention_layer'):
@@ -147,7 +151,24 @@ class LawAtt(object):
 
         return fact_em
 
-    def rnn_encoder(self, inputs, seq_len):
+    def lstm_encoder(self, inputs, seq_len):
+        cell_fw = tf.nn.rnn_cell.LSTMCell(self.hidden_size)
+        cell_bw = tf.nn.rnn_cell.LSTMCell(self.hidden_size)
+
+        (output_fw, output_bw), _ = tf.nn.bidirectional_dynamic_rnn(
+            cell_fw=cell_fw,
+            cell_bw=cell_bw,
+            inputs=inputs,
+            sequence_length=seq_len,
+            dtype=tf.float32
+        )
+
+        # output's shape = [batch_size, seq_len, 2 * hidden_size]
+        output = tf.concat([output_fw, output_bw], axis=-1)
+
+        return output
+
+    def gru_encoder(self, inputs, seq_len):
         cell_fw = tf.nn.rnn_cell.GRUCell(self.hidden_size)
         cell_bw = tf.nn.rnn_cell.GRUCell(self.hidden_size)
 

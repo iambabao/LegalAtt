@@ -6,7 +6,7 @@ from operator import itemgetter
 from sklearn.feature_extraction.text import TfidfVectorizer as TFIDF
 from sklearn.externals import joblib
 
-from src import config
+from src.config import Config
 from src import util
 
 
@@ -17,12 +17,11 @@ def get_data_text(data_file, text_file, to_lower=True):
     print('read file: ', data_file)
     with codecs.open(data_file, 'r', encoding='utf-8') as f_in:
         for line in f_in:
-            data = json.loads(line, encoding='utf-8')
-            fact = data['fact'].strip()
+            fact = json.loads(line)['fact']
+            fact = fact.strip()
             if to_lower:
                 fact = fact.lower()
-            fact = util.refine_text(fact)
-            print(' '.join(fact), file=f_out)
+            print(fact, file=f_out)
             counter += 1
             if counter % 10000 == 0:
                 print('processing: ', counter)
@@ -30,29 +29,7 @@ def get_data_text(data_file, text_file, to_lower=True):
     f_out.close()
 
 
-def get_kb_text(kb_dir, text_file, to_lower=True):
-    f_out = codecs.open(text_file, 'a+', encoding='utf-8')
-
-    counter = 0
-    print('read dir: ', kb_dir)
-    file_list = os.listdir(kb_dir)
-    for file in file_list:
-        file_name = os.path.join(kb_dir, file)
-        with codecs.open(file_name, 'r', encoding='utf-8') as f_in:
-            for line in f_in:
-                line = line.strip()
-                if to_lower:
-                    line = line.lower()
-                line = util.refine_text(line)
-                print(' '.join(line), file=f_out)
-                counter += 1
-                if counter % 10000 == 0:
-                    print('processing: ', counter)
-
-    f_out.close()
-
-
-def build_word_dict(data_file, word_dict_file, word_count_file, vocab_size, to_lower=True):
+def build_word_dict(data_file, word_count_file, word_dict_file, vocab_size, to_lower=True):
     counter = collections.Counter()
 
     print('read file: ', data_file)
@@ -65,9 +42,9 @@ def build_word_dict(data_file, word_dict_file, word_count_file, vocab_size, to_l
     print('number of words: ', len(counter))
 
     del counter[' ']
-    del counter[config.PAD]
-    del counter[config.UNK]
-    del counter[config.NUM]
+    del counter[config.pad]
+    del counter[config.unk]
+    del counter[config.num]
     sorted_counter = dict(sorted(
         counter.items(),
         key=itemgetter(1),
@@ -79,7 +56,7 @@ def build_word_dict(data_file, word_dict_file, word_count_file, vocab_size, to_l
     with codecs.open(word_count_file, 'w', encoding='utf-8') as f_out:
         json.dump(sorted_counter, f_out, ensure_ascii=False, indent=4)
 
-    word_2_id = {config.PAD: config.PAD_ID, config.UNK: config.UNK_ID, config.NUM: config.NUM_ID}
+    word_2_id = {config.pad: config.pad_id, config.unk: config.unk_id, config.num: config.num_id}
     for word in sorted_counter.keys():
         word_2_id[word] = len(word_2_id)
         if len(word_2_id) >= vocab_size:
@@ -103,25 +80,25 @@ def train_tfidf(data_file, feature_size, model_file):
     joblib.dump(tfidf, model_file)
 
 
-def preprocess():
-    if not os.path.exists(config.EMBEDDING_DIR):
-        os.makedirs(config.EMBEDDING_DIR)
+def preprocess(config):
+    if not os.path.exists(config.embedding_dir):
+        os.makedirs(config.embedding_dir)
 
     print('extract plain text')
-    get_data_text(config.TRAIN_DATA, config.PLAIN_TEXT, to_lower=True)
-    get_data_text(config.VALID_DATA, config.PLAIN_TEXT, to_lower=True)
-    get_data_text(config.TEST_DATA, config.PLAIN_TEXT, to_lower=True)
-    get_kb_text(config.LAW_KB_DIR, config.PLAIN_TEXT, to_lower=True)
+    get_data_text(config.train_data, config.plain_text, to_lower=True)
+    get_data_text(config.valid_data, config.plain_text, to_lower=True)
+    get_data_text(config.test_data, config.plain_text, to_lower=True)
 
     print('build word dict')
-    build_word_dict(config.PLAIN_TEXT, config.WORD_DICT, config.WORD_COUNT, config.VOCAB_SIZE, to_lower=True)
+    build_word_dict(config.plain_text, config.word_count, config.word_dict, vocab_size=100000, to_lower=True)
 
     print('train word embedding')
-    util.train_embedding(config.PLAIN_TEXT, config.EMBEDDING_SIZE, config.WORD2VEC_MODEL)
+    util.train_embedding(config.plain_text, config.embedding_size, config.word2vec_model)
 
     print('train tfidf')
-    train_tfidf(config.PLAIN_TEXT, config.TFIDF_SIZE, config.TFIDF_MODEL)
+    train_tfidf(config.plain_text, config.tfidf_size, config.tfidf_model)
 
 
 if __name__ == '__main__':
-    preprocess()
+    config = Config('/home/babao/001_workspaces/001_python/charge_new/', 'temp')
+    preprocess(config)

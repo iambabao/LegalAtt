@@ -1,38 +1,16 @@
 import codecs
 import json
 import os
-import random
 import time
 import numpy as np
 import tensorflow as tf
-from sklearn.externals import joblib
 
-from src import config
-from src import util
+from src.util import read_dict, init_dict, load_embedding, make_batch_iter, id_2_imprisonment, get_task_result
+from src.data_reader import read_data_doc_v2, read_law_kb_doc, pad_fact_batch_doc
 from src.model import FactLaw
 
 
-def pad_fact_batch(fact_batch):
-    new_batch = []
-    for fact in fact_batch:
-        temp = [[config.PAD_ID] * config.SEQUENCE_LEN] * config.DOCUMENT_LEN
-        for i in range(len(fact)):
-            temp[i][:len(fact[i])] = fact[i]
-        new_batch.append(temp)
-    return new_batch
-
-
-def pad_law_kb(law_kb):
-    new_law_kb = []
-    for art in law_kb:
-        temp = [[config.PAD_ID] * config.SEQUENCE_LEN] * config.DOCUMENT_LEN
-        for i in range(len(art)):
-            temp[i][:len(art[i])] = art[i]
-        new_law_kb.append(temp)
-    return new_law_kb
-
-
-def inference(sess, model, batch_iter, kb_data, out_file, verbose=True):
+def inference(sess, model, batch_iter, kb_data, config, verbose=True):
     law_kb, law_seq_len, law_doc_len = kb_data
 
     task_1_output = []
@@ -43,10 +21,10 @@ def inference(sess, model, batch_iter, kb_data, out_file, verbose=True):
         if verbose:
             print('processing batch: %5d' % i, end='\r')
 
-        fact, fact_seq_len, fact_doc_len, tfidf, _, _ = list(zip(*batch))
+        fact, fact_seq_len, fact_doc_len, tfidf, _, _, _ = list(zip(*batch))
 
         batch_size = len(fact)
-        fact = pad_fact_batch(fact)
+        fact = pad_fact_batch_doc(fact, config)
 
         feed_dict = {
             model.fact: fact,
@@ -62,34 +40,14 @@ def inference(sess, model, batch_iter, kb_data, out_file, verbose=True):
             model.task_1_output,
             feed_dict=feed_dict
         )
-        task_1_output.extend(_task_1_output)
-        task_2_output.extend([[0.0] * config.ARTICLE_NUM] * batch_size)
-        task_3_output.extend([[0.0] * config.IMPRISONMENT_NUM] * batch_size)
+        task_1_output.extend(_task_1_output.tolist())
+        task_2_output.extend([[0.0] * config.article_num] * batch_size)
+        task_3_output.extend([[0.0] * config.imprisonment_num] * batch_size)
     print('\ncost time: %.3fs' % (time.time() - start_time))
 
-    # 单标签
-    # task_1_result = [[np.argmax(s, axis=-1)] for s in task_1_output]
-    # task_2_result = [[np.argmax(s, axis=-1)] for s in task_2_output]
-    # task_3_result = np.argmax(task_3_output, axis=-1)
-    #
-    # result = []
-    # for t1, t2, t3 in zip(task_1_result, task_2_result, task_3_result):
-    #     result.append({
-    #         'accusation': t1,
-    #         'articles': t2,
-    #         'imprisonment': util.id_2_imprisonment(t3),
-    #     })
-    #
-    # print('write file: ', out_file + '.json')
-    # with codecs.open(out_file + '.json', 'w', encoding='utf-8') as f_out:
-    #     for r in result:
-    #         r = util.format_result(r)
-    #         print(json.dumps(r), file=f_out)
-
-    # 多标签
-    for threshold in config.TASK_THRESHOLD:
-        task_1_result = [util.get_task_result(s, threshold) for s in task_1_output]
-        task_2_result = [util.get_task_result(s, threshold) for s in task_2_output]
+    for threshold in config.task_threshold:
+        task_1_result = [get_task_result(s, threshold) for s in task_1_output]
+        task_2_result = [get_task_result(s, threshold) for s in task_2_output]
         task_3_result = np.argmax(task_3_output, axis=-1)
 
         result = []
@@ -97,17 +55,16 @@ def inference(sess, model, batch_iter, kb_data, out_file, verbose=True):
             result.append({
                 'accusation': t1,
                 'articles': t2,
-                'imprisonment': util.id_2_imprisonment(t3),
+                'imprisonment': id_2_imprisonment(t3),
             })
 
-        print('write file: ', out_file + '-' + str(threshold) + '.json')
-        with codecs.open(out_file + '-' + str(threshold) + '.json', 'w', encoding='utf-8') as f_out:
+        print('write file: ', config.valid_result + '-' + str(threshold) + '.json')
+        with codecs.open(config.valid_result + '-' + str(threshold) + '.json', 'w', encoding='utf-8') as f_out:
             for r in result:
-                r = util.format_result(r)
                 print(json.dumps(r), file=f_out)
 
 
-def run_epoch(sess, model, batch_iter, kb_data, verbose=True):
+def run_epoch(sess, model, batch_iter, kb_data, config, verbose=True):
     law_kb, law_seq_len, law_doc_len = kb_data
 
     steps = 0
@@ -115,10 +72,10 @@ def run_epoch(sess, model, batch_iter, kb_data, verbose=True):
     _global_step = 0
     start_time = time.time()
     for batch in batch_iter:
-        fact, fact_seq_len, fact_doc_len, tfidf, accu, article = list(zip(*batch))
+        fact, fact_seq_len, fact_doc_len, tfidf, accu, article, _ = list(zip(*batch))
 
         batch_size = len(fact)
-        fact = pad_fact_batch(fact)
+        fact = pad_fact_batch_doc(fact, config)
 
         feed_dict = {
             model.fact: fact,
@@ -148,183 +105,66 @@ def run_epoch(sess, model, batch_iter, kb_data, verbose=True):
     return total_loss / steps, _global_step
 
 
-def make_batch_iter(data, batch_size, shuffle):
-    data_size = len(data)
+def train(config, judger, config_proto):
+    assert config.current_model == 'fact_law'
 
-    if shuffle:
-        random.shuffle(data)
+    if not os.path.exists(config.result_dir):
+        os.makedirs(config.result_dir)
 
-    num_batches = (data_size + batch_size - 1) // batch_size
-    print('total batches: ', num_batches)
-    for i in range(num_batches):
-        start_index = i * batch_size
-        end_index = min(data_size, (i + 1) * batch_size)
-        yield data[start_index: end_index]
+    word_2_id, id_2_word = read_dict(config.word_dict)
+    law_2_id, id_2_law, accu_2_id, id_2_accu = init_dict(config.law_dict, config.accu_dict)
 
-
-def read_law_kb(data_dir, id_2_law, word_2_id, max_seq_len, max_doc_len):
-    law_kb = []
-    law_seq_len = []
-    law_doc_len = []
-    for i in range(len(id_2_law)):
-        law_name = id_2_law[i]
-        file_name = os.path.join(data_dir, str(law_name) + '.txt')
-        with codecs.open(file_name, 'r', encoding='utf-8') as f_in:
-            law = f_in.readline()
-            law = util.refine_text(law)
-            law = util.refine_doc(law, max_seq_len, max_doc_len)
-            law = [util.convert_to_id_list(seq, word_2_id) for seq in law]
-            law_kb.append(law)
-
-            seq_len = [0] * max_doc_len
-            for j in range(len(law)):
-                seq_len[j] = len(law[j])
-            law_seq_len.append(seq_len)
-
-            law_doc_len.append(len(law))
-
-    return pad_law_kb(law_kb), law_seq_len, law_doc_len
-
-
-def read_data(data_file, word_2_id, law_2_id, accu_2_id, tfidf_model_file, max_seq_len, max_doc_len):
-    print('read file: ', data_file)
-    with codecs.open(data_file, 'r', encoding='utf-8') as f_in:
-        lines = f_in.readlines()
-    print('data size: ', len(lines))
-
-    tfidf_model = joblib.load(tfidf_model_file)
-
-    corpus = []
-    fact = []
-    fact_seq_len = []
-    fact_doc_len = []
-    accu = []
-    article = []
-    for line in lines:
-        item = json.loads(line, encoding='utf-8')
-
-        _fact = item['fact'].strip().lower()
-        _fact = util.refine_text(_fact)
-        corpus.append(' '.join(_fact))
-
-        _fact = util.refine_doc(_fact, max_seq_len, max_doc_len)
-        _fact = [util.convert_to_id_list(seq, word_2_id) for seq in _fact]
-        fact.append(_fact)
-
-        _fact_seq_len = [0] * max_doc_len
-        for i in range(len(_fact)):
-            _fact_seq_len[i] = len(_fact[i])
-        fact_seq_len.append(_fact_seq_len)
-
-        fact_doc_len.append(len(_fact))
-
-        temp = item['meta']['accusation']
-        for i in range(len(temp)):
-            temp[i] = temp[i].replace('[', '').replace(']', '')
-        temp = [accu_2_id[v] for v in temp]
-        _accu = [0] * config.ACCU_NUM
-        for i in temp:
-            _accu[i] = 1
-        accu.append(_accu)
-
-        temp = [str(t) for t in item['meta']['relevant_articles']]
-        temp = [law_2_id[v] for v in temp]
-        _article = [0] * config.ARTICLE_NUM
-        for i in temp:
-            _article[i] = 1
-        article.append(_article)
-
-    return fact, fact_seq_len, fact_doc_len, tfidf_model.transform(corpus).toarray(), accu, article
-
-
-def train(judger, config_proto):
-    assert config.CURRENT_MODEL == 'fact_law'
-
-    if not os.path.exists(config.MODEL_DIR):
-        os.makedirs(config.MODEL_DIR)
-    if not os.path.exists(config.RESULT_DIR):
-        os.makedirs(config.RESULT_DIR)
-
-    word_2_id, id_2_word = util.read_dict(config.WORD_DICT)
-    law_2_id, id_2_law, accu_2_id, id_2_accu = util.init_dict(config.LAW_DICT, config.ACCU_DICT)
-    if os.path.exists(config.WORD2VEC_MODEL):
-        embedding_matrix = util.load_embedding(config.WORD2VEC_MODEL, word_2_id.keys())
+    if os.path.exists(config.word2vec_model):
+        embedding_matrix = load_embedding(config.word2vec_model, word_2_id.keys())
         embedding_trainable = False
     else:
-        embedding_matrix = np.random.uniform(-0.5, 0.5, [config.VOCAB_SIZE, config.EMBEDDING_SIZE])
+        embedding_matrix = np.random.uniform(-0.5, 0.5, [len(word_2_id), config.embedding_size])
         embedding_trainable = True
 
     with tf.variable_scope('model', reuse=None):
         train_model = FactLaw(
-            accu_num=config.ACCU_NUM, article_num=config.ARTICLE_NUM,
-            top_k=config.TOP_K, tfidf_size=config.TFIDF_SIZE,
-            max_seq_len=config.SEQUENCE_LEN, max_doc_len=config.DOCUMENT_LEN,
-            hidden_size=config.HIDDEN_SIZE, att_size=config.ATT_SIZE, fc_size=config.FC_SIZE_S,
+            accu_num=config.accu_num, article_num=config.article_num,
+            top_k=config.top_k, tfidf_size=config.tfidf_size,
+            max_seq_len=config.sequence_len, max_doc_len=config.document_len,
+            hidden_size=config.hidden_size, att_size=config.att_size, fc_size=config.fc_size_s,
             embedding_matrix=embedding_matrix, embedding_trainable=embedding_trainable,
-            lr=config.LR, optimizer=config.OPTIMIZER, keep_prob=config.KEEP_PROB, l2_rate=config.L2_RATE,
+            lr=config.lr, optimizer=config.optimizer, keep_prob=config.keep_prob, l2_rate=config.l2_rate,
             is_training=True
         )
     with tf.variable_scope('model', reuse=True):
         valid_model = FactLaw(
-            accu_num=config.ACCU_NUM, article_num=config.ARTICLE_NUM,
-            top_k=config.TOP_K, tfidf_size=config.TFIDF_SIZE,
-            max_seq_len=config.SEQUENCE_LEN, max_doc_len=config.DOCUMENT_LEN,
-            hidden_size=config.HIDDEN_SIZE, att_size=config.ATT_SIZE, fc_size=config.FC_SIZE_S,
+            accu_num=config.accu_num, article_num=config.article_num,
+            top_k=config.top_k, tfidf_size=config.tfidf_size,
+            max_seq_len=config.sequence_len, max_doc_len=config.document_len,
+            hidden_size=config.hidden_size, att_size=config.att_size, fc_size=config.fc_size_s,
             embedding_matrix=embedding_matrix, embedding_trainable=embedding_trainable,
-            lr=config.LR, optimizer=config.OPTIMIZER, keep_prob=config.KEEP_PROB, l2_rate=config.L2_RATE,
+            lr=config.lr, optimizer=config.optimizer, keep_prob=config.keep_prob, l2_rate=config.l2_rate,
             is_training=False
         )
 
-    train_data = read_data(config.TRAIN_DATA, word_2_id, law_2_id, accu_2_id, config.TFIDF_MODEL,
-                           config.SEQUENCE_LEN, config.DOCUMENT_LEN)
-    valid_data = read_data(config.VALID_DATA, word_2_id, law_2_id, accu_2_id, config.TFIDF_MODEL,
-                           config.SEQUENCE_LEN, config.DOCUMENT_LEN)
-    kb_data = read_law_kb(config.LAW_KB_DIR, id_2_law, word_2_id, config.SEQUENCE_LEN, config.DOCUMENT_LEN)
+    train_data = read_data_doc_v2(config.train_data, word_2_id, accu_2_id, law_2_id, config)
+    valid_data = read_data_doc_v2(config.valid_data, word_2_id, accu_2_id, law_2_id, config)
+    kb_data = read_law_kb_doc(id_2_law, word_2_id, config)
 
-    best_accu_micro_f1 = 0.0
-    best_accu_macro_f1 = 0.0
-    best_article_micro_f1 = 0.0
-    best_article_macro_f1 = 0.0
-    best_score = [0.0, 0.0, 0.0]
     saver = tf.train.Saver(max_to_keep=1)
     with tf.Session(config=config_proto) as sess:
         tf.global_variables_initializer().run()
-        saver.save(sess, config.MODEL_FILE)
+        saver.save(sess, config.model_file)
 
-        for i in range(config.NUM_EPOCH):
+        for i in range(config.num_epoch):
             print('==========  Epoch %2d Train  ==========' % (i + 1))
-            train_batch_iter = make_batch_iter(list(zip(*train_data)), config.BATCH_SIZE, shuffle=True)
-            train_loss, global_step = run_epoch(sess, train_model, train_batch_iter, kb_data, verbose=True)
+            train_batch_iter = make_batch_iter(list(zip(*train_data)), config.batch_size, shuffle=True)
+            train_loss, global_step = run_epoch(sess, train_model, train_batch_iter, kb_data, config, verbose=True)
             print('The average train loss of epoch %2d is %.3f' % ((i + 1), train_loss))
 
             print('==========  Epoch %2d Valid  ==========' % (i + 1))
-            valid_batch_iter = make_batch_iter(list(zip(*valid_data)), config.BATCH_SIZE, shuffle=False)
-            inference(sess, valid_model, valid_batch_iter, kb_data, config.VALID_RESULT, verbose=True)
+            valid_batch_iter = make_batch_iter(list(zip(*valid_data)), config.batch_size, shuffle=False)
+            inference(sess, valid_model, valid_batch_iter, kb_data, config, verbose=True)
 
-            # 单标签
-            # result = judger.my_test(config.VALID_DATA, config.VALID_RESULT + '.json')
-            # accu_micro_f1, accu_macro_f1 = judger.calc_f1(result[0])
-            # article_micro_f1, article_macro_f1 = judger.calc_f1(result[1])
-            # score = judger.get_score(result)
-            # print('Threshold: %.3f' % threshold)
-            # print('Micro-F1 of accusation: %.3f' % accu_micro_f1)
-            # print('Macro-F1 of accusation: %.3f' % accu_macro_f1)
-            # print('Micro-F1 of relevant articles: %.3f' % article_micro_f1)
-            # print('Macro-F1 of relevant articles: %.3f' % article_macro_f1)
-            # print('Score: ', score)
-            #
-            # if best_score[0] < score[0]:
-            #     best_accu_micro_f1 = accu_micro_f1
-            #     best_accu_macro_f1 = accu_macro_f1
-            #     best_article_micro_f1 = article_micro_f1
-            #     best_article_macro_f1 = article_macro_f1
-            #     best_score = score
-            #     print('Saving model ...')
-            #     saver.save(sess, config.MODEL_FILE)
-
-            # 多标签
-            for threshold in config.TASK_THRESHOLD:
-                result = judger.my_test(config.VALID_DATA, config.VALID_RESULT + '-' + str(threshold) + '.json')
+            print('==========  Saving model  ==========')
+            saver.save(sess, config.model_file)
+            for threshold in config.task_threshold:
+                result = judger.my_test(config.valid_data, config.valid_result + '-' + str(threshold) + '.json')
                 accu_micro_f1, accu_macro_f1 = judger.calc_f1(result[0])
                 article_micro_f1, article_macro_f1 = judger.calc_f1(result[1])
                 score = judger.get_score(result)
@@ -334,18 +174,3 @@ def train(judger, config_proto):
                 print('Micro-F1 of relevant articles: %.3f' % article_micro_f1)
                 print('Macro-F1 of relevant articles: %.3f' % article_macro_f1)
                 print('Score: ', score)
-
-                if best_score[0] < score[0]:
-                    best_accu_micro_f1 = accu_micro_f1
-                    best_accu_macro_f1 = accu_macro_f1
-                    best_article_micro_f1 = article_micro_f1
-                    best_article_macro_f1 = article_macro_f1
-                    best_score = score
-                    print('Saving model ...')
-                    saver.save(sess, config.MODEL_FILE)
-
-    print('Best micro-F1 of accusation is: %.3f' % best_accu_micro_f1)
-    print('Best macro-F1 of accusation is: %.3f' % best_accu_macro_f1)
-    print('Best micro-F1 of relevant articles: %.3f' % best_article_micro_f1)
-    print('Best macro-F1 of relevant articles: %.3f' % best_article_macro_f1)
-    print('Best score is: ', best_score)

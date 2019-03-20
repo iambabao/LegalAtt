@@ -86,18 +86,25 @@ class TopJudge(object):
         return fact_em
 
     def fact_encoder(self, inputs):
-        # conv's shape = [batch_size, seq_len, filter_dim]
-        conv = tf.layers.conv1d(
-            inputs,
-            filters=self.filter_dim,
-            kernel_size=self.kernel_size,
-            activation=tf.nn.relu,
-            padding='same',
-            kernel_regularizer=self.regularizer
-        )
+        enc_output = []
+        for kernel_size in self.kernel_size:
+            with tf.variable_scope('conv_' + str(kernel_size)):
+                # conv's shape = [batch_size, seq_len, filter_dim]
+                conv = tf.layers.conv1d(
+                    inputs,
+                    filters=self.filter_dim,
+                    kernel_size=kernel_size,
+                    padding='same',
+                    activation=tf.nn.relu,
+                    kernel_regularizer=self.regularizer
+                )
 
-        # enc_output's shape = [batch_size, filter_dim]
-        enc_output = tf.reduce_max(conv, axis=-2)
+                # pool's shape = [batch_size, filter_dim]
+                pool = tf.reduce_max(conv, axis=-2)
+
+                enc_output.append(pool)
+
+        enc_output = tf.concat(enc_output, axis=-1)
 
         return enc_output
 

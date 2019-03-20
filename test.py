@@ -14,23 +14,23 @@ config = Config('./', current_model)
 
 print('Current model: ', config.current_model)
 if config.current_model == 'fasttext':
-    from src.train.train_fasttext import train
+    from src.test.test_fasttext import test
 elif config.current_model == 'bilstm':
-    from src.train.train_bilstm import train
+    from src.test.test_bilstm import test
 elif config.current_model == 'bigru':
-    from src.train.train_bigru import train
+    from src.test.test_bigru import test
 elif config.current_model == 'han':
-    from src.train.train_han import train
+    from src.test.test_han import test
 elif config.current_model == 'cnn':
-    from src.train.train_cnn import train
+    from src.test.test_cnn import test
 elif config.current_model == 'dpcnn':
-    from src.train.train_dpcnn import train
+    from src.test.test_dpcnn import test
 elif config.current_model == 'topjudge':
-    from src.train.train_topjudge import train
+    from src.test.test_topjudge import test
 elif config.current_model == 'fact_law':
-    from src.train.train_fact_law import train
+    from src.test.test_fact_law import test
 elif config.current_model == 'law_att':
-    from src.train.train_law_att import train
+    from src.test.test_law_att import test
 else:
     print('No model named: ', config.current_model)
     exit()
@@ -40,4 +40,4 @@ config_proto = tf.ConfigProto(allow_soft_placement=True)  # 创建配置，允�
 config_proto.gpu_options.allow_growth = True  # 运行时动态增加内存使用量
 judger = Judger(config.accu_dict, config.law_dict)
 
-train(config, judger, config_proto)
+test(config, judger, config_proto)
