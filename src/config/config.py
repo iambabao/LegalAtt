@@ -2,18 +2,17 @@ import os
 
 
 class Config:
-    def __init__(self, root_dir, current_model, top_k=5, embedding_size=200, tfidf_size=5000,
+    def __init__(self, root_dir, current_model, num_epoch, batch_size, optimizer, lr,
+                 sentence_len=500, sequence_len=100, document_len=20,
+                 top_k=5, embedding_size=200, tfidf_size=5000,
                  hidden_size=100, att_size=100, kernel_size=(2, 3, 4, 5), filter_dim=50,
                  block_num=5, head_num=5, model_dim=200, fc_size_s=200, fc_size_m=500, fc_size_l=1000,
-                 num_epoch=30, batch_size=16, sentence_len=500, sequence_len=100, document_len=20,
-                 optimizer='Adam', lr=0.001, keep_prob=0.8, l2_rate=0.0, use_batch_norm=False):
+                 keep_prob=0.8, l2_rate=0.0, use_batch_norm=False):
 
         self.root_dir = root_dir
 
-        # 存储临时文件
         self.temp_dir = os.path.join(self.root_dir, 'temp')
 
-        # 存储数据文件
         self.data_dir = os.path.join(self.root_dir, 'data')
         self.train_data = os.path.join(self.data_dir, 'data_train.json')
         self.valid_data = os.path.join(self.data_dir, 'data_valid.json')
@@ -23,10 +22,8 @@ class Config:
         self.accu_dict = os.path.join(self.data_dir, 'accu.txt')
         self.law_dict = os.path.join(self.data_dir, 'law.txt')
 
-        # 存储法律文本
         self.law_kb_dir = os.path.join(self.data_dir, 'law_kb')
         
-        # 存储词向量文件
         self.embedding_dir = os.path.join(self.data_dir, 'embedding')
         self.plain_text = os.path.join(self.embedding_dir, 'plain_text.txt')
         self.word2vec_model = os.path.join(self.embedding_dir, 'word2vec.model')
@@ -34,7 +31,6 @@ class Config:
 
         self.current_model = current_model        
         
-        # 存储训练结果
         self.result_dir = os.path.join(self.root_dir, 'result', self.current_model)
         self.model_file = os.path.join(self.result_dir, 'model')
         self.valid_result = os.path.join(self.result_dir, 'valid_result')
@@ -75,12 +71,12 @@ class Config:
         self.fc_size_m = fc_size_m
         self.fc_size_l = fc_size_l
 
-        self.num_epoch = num_epoch
-        self.batch_size = batch_size
         self.sentence_len = sentence_len
         self.sequence_len = sequence_len
         self.document_len = document_len
-        
+
+        self.num_epoch = num_epoch
+        self.batch_size = batch_size
         self.optimizer = optimizer
         self.lr = lr
         self.keep_prob = keep_prob
