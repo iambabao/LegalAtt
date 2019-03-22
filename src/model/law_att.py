@@ -5,7 +5,7 @@ class LawAtt(object):
     def __init__(self, accu_num, article_num, top_k, max_seq_len,
                  hidden_size, att_size, kernel_size, filter_dim, fc_size,
                  embedding_matrix, embedding_trainable,
-                 lr, optimizer, keep_prob, l2_rate, is_training):
+                 lr, optimizer, keep_prob, l2_rate, use_batch_norm, is_training):
         self.accu_num = accu_num
         self.article_num = article_num
         self.top_k = top_k
@@ -22,13 +22,15 @@ class LawAtt(object):
             shape=embedding_matrix.shape,
             trainable=embedding_trainable,
             dtype=tf.float32,
-            name='embedding_matrix')
+            name='embedding_matrix'
+        )
         self.embedding_size = embedding_matrix.shape[-1]
 
         self.lr = lr
         self.optimizer = optimizer
         self.keep_prob = keep_prob
         self.l2_rate = l2_rate
+        self.use_batch_norm = use_batch_norm
 
         self.is_training = is_training
 
@@ -51,18 +53,12 @@ class LawAtt(object):
             fact_em = self.fact_embedding_layer()
 
         with tf.variable_scope('fact_encoder'):
-            fact_enc = self.cnn_encoder(fact_em)
             # fact_enc = self.lstm_encoder(fact_em, self.fact_len)
             # fact_enc = self.gru_encoder(fact_em, self.fact_len)
+            fact_enc = self.cnn_encoder(fact_em)
 
         with tf.variable_scope('article_extractor'):
-            # art_score's shape = [batch_size, article_num]
-            # top_k_score's shape = [batch_size, top_k]
-            # top_k_indices' shape = [batch_size, top_k]
             art_score, top_k_score, top_k_indices = self.get_top_k_indices(fact_enc)
-
-            # top_k_art's shape = [batch_size, top_k, max_seq_len]
-            # top_k_art_len's shape = [batch_size, top_k]
             top_k_art, top_k_art_len = self.get_top_k_articles(top_k_indices)
 
         with tf.variable_scope('article_embedding'):
@@ -77,9 +73,9 @@ class LawAtt(object):
                 art_em = tf.reshape(art_em, [-1, self.max_seq_len, self.embedding_size])
                 art_len = tf.reshape(art_len, [-1])
 
-                art_enc = self.cnn_encoder(art_em)
                 # art_enc = self.lstm_encoder(art_em, art_len)
                 # art_enc = self.gru_encoder(art_em, art_len)
+                art_enc = self.cnn_encoder(art_em)
                 art_enc_splits.append(art_enc)
 
         with tf.variable_scope('attention_layer'):
@@ -122,6 +118,8 @@ class LawAtt(object):
 
         with tf.variable_scope('highway'):
             fact_enc_with_att = fact_enc_with_att + fact_enc
+            if self.use_batch_norm:
+                fact_enc_with_att = tf.layers.batch_normalization(fact_enc_with_att, training=self.is_training)
             fact_enc_with_att = tf.reduce_max(fact_enc_with_att, axis=-2)
 
         with tf.variable_scope('output_layer'):
@@ -132,9 +130,9 @@ class LawAtt(object):
             self.task_2_output = tf.where(tf.nn.sigmoid(art_score) > 0.3, ones, zeros)
 
         with tf.variable_scope('loss'):
-            art_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.article, logits=art_score))
+            task_2_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.article, logits=art_score))
 
-            self.loss = task_1_loss + art_loss
+            self.loss = task_1_loss + task_2_loss
             if self.regularizer is not None:
                 l2_loss = tf.add_n(tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES))
                 self.loss += l2_loss
@@ -154,7 +152,6 @@ class LawAtt(object):
     def lstm_encoder(self, inputs, seq_len):
         cell_fw = tf.nn.rnn_cell.LSTMCell(self.hidden_size)
         cell_bw = tf.nn.rnn_cell.LSTMCell(self.hidden_size)
-
         (output_fw, output_bw), _ = tf.nn.bidirectional_dynamic_rnn(
             cell_fw=cell_fw,
             cell_bw=cell_bw,
@@ -163,15 +160,15 @@ class LawAtt(object):
             dtype=tf.float32
         )
 
-        # output's shape = [batch_size, seq_len, 2 * hidden_size]
         output = tf.concat([output_fw, output_bw], axis=-1)
+        if self.use_batch_norm:
+            output = tf.layers.batch_normalization(output, training=self.is_training)
 
         return output
 
     def gru_encoder(self, inputs, seq_len):
         cell_fw = tf.nn.rnn_cell.GRUCell(self.hidden_size)
         cell_bw = tf.nn.rnn_cell.GRUCell(self.hidden_size)
-
         (output_fw, output_bw), _ = tf.nn.bidirectional_dynamic_rnn(
             cell_fw=cell_fw,
             cell_bw=cell_bw,
@@ -180,8 +177,9 @@ class LawAtt(object):
             dtype=tf.float32
         )
 
-        # output's shape = [batch_size, seq_len, 2 * hidden_size]
         output = tf.concat([output_fw, output_bw], axis=-1)
+        if self.use_batch_norm:
+            output = tf.layers.batch_normalization(output, training=self.is_training)
 
         return output
 
@@ -189,7 +187,6 @@ class LawAtt(object):
         enc_output = []
         for kernel_size in self.kernel_size:
             with tf.variable_scope('conv_' + str(kernel_size)):
-                # conv's shape = [batch_size, seq_len, filter_dim]
                 conv = tf.layers.conv1d(
                     inputs,
                     filters=self.filter_dim,
@@ -198,10 +195,11 @@ class LawAtt(object):
                     activation=tf.nn.relu,
                     kernel_regularizer=self.regularizer
                 )
+                if self.use_batch_norm:
+                    conv = tf.layers.batch_normalization(conv, training=self.is_training)
 
                 enc_output.append(conv)
 
-        # enc_output's shape = [batch_size, seq_len, len(kernel_size) * filter_dim]
         enc_output = tf.concat(enc_output, axis=-1)
 
         return enc_output
@@ -237,7 +235,6 @@ class LawAtt(object):
         mask_key = tf.sequence_mask(key_len, maxlen=self.max_seq_len, dtype=tf.float32)
         mask = tf.matmul(tf.expand_dims(mask_query, axis=-1), tf.expand_dims(mask_key, axis=-2))
 
-        # att's shape = [batch_size, seq_len, seq_len]
         att = mask * att
 
         return att
@@ -269,4 +266,8 @@ class LawAtt(object):
             optimizer = tf.train.GradientDescentOptimizer(learning_rate=self.lr)
 
         train_op = optimizer.minimize(self.loss, global_step=global_step)
+        if self.use_batch_norm:
+            update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+            train_op = tf.group([train_op, update_ops])
+
         return global_step, train_op

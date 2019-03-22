@@ -6,14 +6,14 @@ class FactLaw(object):
                  top_k, tfidf_size, max_seq_len, max_doc_len,
                  hidden_size, att_size, fc_size,
                  embedding_matrix, embedding_trainable,
-                 lr, optimizer, keep_prob, l2_rate, is_training):
+                 lr, optimizer, keep_prob, l2_rate, use_batch_norm, is_training):
         self.accu_num = accu_num
         self.article_num = article_num
-
         self.top_k = top_k
         self.tfidf_size = tfidf_size
         self.max_seq_len = max_seq_len
         self.max_doc_len = max_doc_len
+
         self.hidden_size = hidden_size
         self.att_size = att_size
         self.fc_size = fc_size
@@ -23,13 +23,15 @@ class FactLaw(object):
             shape=embedding_matrix.shape,
             trainable=embedding_trainable,
             dtype=tf.float32,
-            name='embedding_matrix')
+            name='embedding_matrix'
+        )
         self.embedding_size = embedding_matrix.shape[-1]
 
         self.lr = lr
         self.optimizer = optimizer
         self.keep_prob = keep_prob
         self.l2_rate = l2_rate
+        self.use_batch_norm = use_batch_norm
 
         self.is_training = is_training
 
@@ -52,13 +54,7 @@ class FactLaw(object):
         self.article = tf.placeholder(dtype=tf.float32, shape=[None, article_num], name='article')
 
         with tf.variable_scope('article_extractor'):
-            # art_score's shape = [batch_size, article_num]
-            # top_k_indices' shape = [batch_size, top_k]
             art_score, top_k_indices = self.get_top_k_indices()
-
-            # top_k_art's shape = [batch_size, top_k, max_doc_len, max_seq_len]
-            # top_k_art_seq_len's shape = [batch_size, top_k, max_doc_len]
-            # top_k_art_doc_len's shape = [batch_size, top_k]
             top_k_art, top_k_art_seq_len, top_k_art_doc_len = self.get_top_k_articles(top_k_indices)
 
         with tf.variable_scope('fact_embedding'):
@@ -70,7 +66,6 @@ class FactLaw(object):
         with tf.variable_scope('fact_encoder'):
             u_fw = tf.get_variable(initializer=self.w_init, shape=[self.att_size], name='u_fw')
             u_fs = tf.get_variable(initializer=self.w_init, shape=[self.att_size], name='u_fs')
-            # fact_enc's shape = [batch_size, 2 * hidden_size]
             fact_enc = self.document_encoder(fact_em, self.fact_seq_len, self.fact_doc_len, u_fw, u_fs)
 
         with tf.variable_scope('article_encoder', reuse=tf.AUTO_REUSE):
@@ -84,13 +79,10 @@ class FactLaw(object):
                 enc_output = self.document_encoder(art_em, seq_len, doc_len, u_aw, u_as)
                 enc_output = tf.expand_dims(enc_output, axis=1)
                 enc_outputs.append(enc_output)
-            # art_enc's shape = [batch_size, top_k, 2 * hidden_size]
             art_enc = tf.concat(enc_outputs, axis=1)
 
         with tf.variable_scope('article_aggregator'):
             u_ad = tf.layers.dense(fact_enc, self.att_size, kernel_regularizer=self.regularizer)
-            # art_agg's shape = [batch_size, 2 * hidden_size]
-            # art_att's shape = [batch_size, top_k, 1]
             agg_art_enc, art_att = self.article_aggregator(art_enc, u_ad)
 
         with tf.variable_scope('concat_layer'):
@@ -162,16 +154,16 @@ class FactLaw(object):
                 sequence_length=seq_len,
                 dtype=tf.float32
             )
-            # seq_output's shape = [batch_size, doc_len, seq_len, 2 * hidden_size]
+
             seq_output = tf.concat([output_fw, output_bw], axis=-1)
             seq_output = tf.reshape(seq_output, [-1, self.max_doc_len, self.max_seq_len, 2 * self.hidden_size])
+            if self.use_batch_norm:
+                seq_output = tf.layers.batch_normalization(seq_output, training=self.is_training)
 
-            # att_w's shape = [batch_size, doc_len, seq_len, 1]
             u = tf.layers.dense(seq_output, self.att_size, tf.nn.tanh, kernel_regularizer=self.regularizer)
             u_att = tf.reshape(u_w, [-1, 1, 1, self.att_size])
-            att_w = tf.math.softmax(tf.reduce_sum(u * u_att, axis=-1, keepdims=True), axis=-1)
+            att_w = tf.nn.softmax(tf.reduce_sum(u * u_att, axis=-1, keepdims=True), axis=-1)
 
-            # seq_output's shape = [batch_size, doc_len, 2 * hidden_size]
             seq_output = tf.reduce_sum(att_w * seq_output, axis=-2)
 
         with tf.variable_scope('document_level'):
@@ -186,41 +178,40 @@ class FactLaw(object):
                 sequence_length=doc_len,
                 dtype=tf.float32
             )
-            # doc_output's shape = [batch_size, doc_len, 2 * hidden_size]
-            doc_output = tf.concat([output_fw, output_bw], axis=-1)
 
-            # att_s' shape = [batch_size, doc_len, 1]
+            doc_output = tf.concat([output_fw, output_bw], axis=-1)
+            if self.use_batch_norm:
+                doc_output = tf.layers.batch_normalization(doc_output, training=self.is_training)
+
             u = tf.layers.dense(doc_output, self.att_size, tf.nn.tanh, kernel_regularizer=self.regularizer)
             u_att = tf.reshape(u_s, [-1, 1, self.att_size])
-            att_s = tf.math.softmax(tf.reduce_sum(u * u_att, axis=-1, keepdims=True), axis=-1)
+            att_s = tf.nn.softmax(tf.reduce_sum(u * u_att, axis=-1, keepdims=True), axis=-1)
 
-            # doc_output's shape = [batch_size, 2 * hidden_size]
             doc_output = tf.reduce_sum(att_s * doc_output, axis=-2)
 
         return doc_output
 
     def article_aggregator(self, art, u_document):
-        gru_fw = tf.nn.rnn_cell.GRUCell(self.hidden_size)
-        gru_bw = tf.nn.rnn_cell.GRUCell(self.hidden_size)
-
-        # outputs' shape = [batch_size, top_k, 2 * hidden_size]
+        cell_fw = tf.nn.rnn_cell.GRUCell(self.hidden_size)
+        cell_bw = tf.nn.rnn_cell.GRUCell(self.hidden_size)
         (output_fw, output_bw), _ = tf.nn.bidirectional_dynamic_rnn(
-            cell_fw=gru_fw,
-            cell_bw=gru_bw,
+            cell_fw=cell_fw,
+            cell_bw=cell_bw,
             inputs=art,
             dtype=tf.float32
         )
-        output = tf.concat([output_fw, output_bw], axis=-1)
 
-        # att's shape = [batch_size, top_k, 1]
+        output = tf.concat([output_fw, output_bw], axis=-1)
+        if self.use_batch_norm:
+            output = tf.layers.batch_normalization(output, training=self.is_training)
+
         u = tf.layers.dense(output, self.att_size, tf.nn.tanh, kernel_regularizer=self.regularizer)
         u_att = tf.reshape(u_document, [-1, 1, self.att_size])
         att_d = tf.math.softmax(tf.reduce_sum(u * u_att, axis=-1, keepdims=True), axis=-1)
 
-        # art_outputs' shape = [batch_size, 2 * hidden_size]
-        art_outputs = tf.reduce_sum(output * att_d, axis=-2)
+        art_output = tf.reduce_sum(att_d * output, axis=-2)
 
-        return art_outputs, att_d
+        return art_output, att_d
 
     def output_layer(self, inputs, labels, label_num):
         fc_output = tf.layers.dense(inputs, self.fc_size, kernel_regularizer=self.regularizer)
@@ -249,4 +240,8 @@ class FactLaw(object):
             optimizer = tf.train.GradientDescentOptimizer(learning_rate=self.lr)
 
         train_op = optimizer.minimize(self.loss, global_step=global_step)
+        if self.use_batch_norm:
+            update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+            train_op = tf.group([train_op, update_ops])
+
         return global_step, train_op

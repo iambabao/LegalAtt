@@ -44,7 +44,7 @@ def train_embedding(text_file, embedding_size, model_file):
         for line in f_in:
             data.append(line.strip().split())
 
-    model = Word2Vec(data, size=embedding_size, window=5, min_count=3)
+    model = Word2Vec(data, size=embedding_size, window=5, min_count=5)
     model.save(model_file)
 
 

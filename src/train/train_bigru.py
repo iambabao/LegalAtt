@@ -107,19 +107,19 @@ def train(config, judger, config_proto):
 
     with tf.variable_scope('model', reuse=None):
         train_model = BiGRU(
-            accu_num=config.accu_num,
-            max_seq_len=config.sentence_len, hidden_size=config.hidden_size, fc_size=config.fc_size_s,
+            accu_num=config.accu_num, max_seq_len=config.sentence_len,
+            hidden_size=config.hidden_size, fc_size=config.fc_size_s,
             embedding_matrix=embedding_matrix, embedding_trainable=embedding_trainable,
             lr=config.lr, optimizer=config.optimizer, keep_prob=config.keep_prob, l2_rate=config.l2_rate,
-            is_training=True
+            use_batch_norm=config.use_batch_norm, is_training=True
         )
     with tf.variable_scope('model', reuse=True):
         valid_model = BiGRU(
-            accu_num=config.accu_num,
-            max_seq_len=config.sentence_len, hidden_size=config.hidden_size, fc_size=config.fc_size_s,
+            accu_num=config.accu_num, max_seq_len=config.sentence_len,
+            hidden_size=config.hidden_size, fc_size=config.fc_size_s,
             embedding_matrix=embedding_matrix, embedding_trainable=embedding_trainable,
             lr=config.lr, optimizer=config.optimizer, keep_prob=config.keep_prob, l2_rate=config.l2_rate,
-            is_training=False
+            use_batch_norm=config.use_batch_norm, is_training=False
         )
 
     train_data = read_data(config.train_data, word_2_id, accu_2_id, law_2_id, config)

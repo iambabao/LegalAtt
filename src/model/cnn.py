@@ -2,13 +2,13 @@ import tensorflow as tf
 
 
 class CNN(object):
-    def __init__(self, accu_num,
-                 max_seq_len, kernel_size, filter_dim, fc_size,
+    def __init__(self, accu_num, max_seq_len,
+                 kernel_size, filter_dim, fc_size,
                  embedding_matrix, embedding_trainable,
-                 lr, optimizer, keep_prob, l2_rate, is_training):
+                 lr, optimizer, keep_prob, l2_rate, use_batch_norm, is_training):
         self.accu_num = accu_num
-
         self.max_seq_len = max_seq_len
+
         self.kernel_size = kernel_size
         self.filter_dim = filter_dim
         self.fc_size = fc_size
@@ -18,13 +18,15 @@ class CNN(object):
             shape=embedding_matrix.shape,
             trainable=embedding_trainable,
             dtype=tf.float32,
-            name='embedding_matrix')
+            name='embedding_matrix'
+        )
         self.embedding_size = embedding_matrix.shape[-1]
 
         self.lr = lr
         self.optimizer = optimizer
         self.keep_prob = keep_prob
         self.l2_rate = l2_rate
+        self.use_batch_norm = use_batch_norm
 
         self.is_training = is_training
 
@@ -39,13 +41,11 @@ class CNN(object):
         self.fact = tf.placeholder(dtype=tf.int32, shape=[None, max_seq_len], name='fact')
         self.accu = tf.placeholder(dtype=tf.float32, shape=[None, accu_num], name='accu')
 
-        # fact_em's shape = [batch_size, max_seq_len, embedding_size]
         with tf.variable_scope('fact_embedding'):
             fact_em = self.fact_embedding_layer()
 
-        # fact_enc's shape = [batch_size, len(kernel_size) * filter_dim]
         with tf.variable_scope('fact_encoder'):
-            fact_enc = self.fact_encoder(fact_em)
+            fact_enc = self.cnn_encoder(fact_em)
 
         with tf.variable_scope('output_layer'):
             self.task_1_output, task_1_loss = self.output_layer(fact_enc, self.accu, self.accu_num)
@@ -68,11 +68,10 @@ class CNN(object):
 
         return fact_em
 
-    def fact_encoder(self, inputs):
+    def cnn_encoder(self, inputs):
         enc_output = []
         for kernel_size in self.kernel_size:
             with tf.variable_scope('conv_' + str(kernel_size)):
-                # conv's shape = [batch_size, seq_len, filter_dim]
                 conv = tf.layers.conv1d(
                     inputs,
                     filters=self.filter_dim,
@@ -81,8 +80,8 @@ class CNN(object):
                     activation=tf.nn.relu,
                     kernel_regularizer=self.regularizer
                 )
-
-                # pool's shape = [batch_size, filter_dim]
+                if self.use_batch_norm:
+                    conv = tf.layers.batch_normalization(conv, training=self.is_training)
                 pool = tf.reduce_max(conv, axis=-2)
 
                 enc_output.append(pool)
@@ -118,4 +117,8 @@ class CNN(object):
             optimizer = tf.train.GradientDescentOptimizer(learning_rate=self.lr)
 
         train_op = optimizer.minimize(self.loss, global_step=global_step)
+        if self.use_batch_norm:
+            update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+            train_op = tf.group([train_op, update_ops])
+
         return global_step, train_op

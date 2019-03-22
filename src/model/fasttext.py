@@ -2,13 +2,13 @@ import tensorflow as tf
 
 
 class FastText(object):
-    def __init__(self, accu_num,
-                 max_seq_len, fc_size,
+    def __init__(self, accu_num, max_seq_len,
+                 fc_size,
                  embedding_matrix, embedding_trainable,
                  lr, optimizer, keep_prob, l2_rate, is_training):
         self.accu_num = accu_num
-
         self.max_seq_len = max_seq_len
+
         self.fc_size = fc_size
 
         self.embedding_matrix = tf.get_variable(
@@ -16,7 +16,8 @@ class FastText(object):
             shape=embedding_matrix.shape,
             trainable=embedding_trainable,
             dtype=tf.float32,
-            name='embedding_matrix')
+            name='embedding_matrix'
+        )
         self.embedding_size = embedding_matrix.shape[-1]
 
         self.lr = lr
@@ -38,7 +39,6 @@ class FastText(object):
         self.fact_len = tf.placeholder(dtype=tf.int32, shape=[None], name='fact_len')
         self.accu = tf.placeholder(dtype=tf.float32, shape=[None, accu_num], name='accu')
 
-        # fact_em's shape = [batch_size, max_seq_len, embedding_size]
         with tf.variable_scope('fact_embedding'):
             fact_em = self.fact_embedding_layer()
 
@@ -93,4 +93,5 @@ class FastText(object):
             optimizer = tf.train.GradientDescentOptimizer(learning_rate=self.lr)
 
         train_op = optimizer.minimize(self.loss, global_step=global_step)
+
         return global_step, train_op

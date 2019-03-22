@@ -5,8 +5,8 @@ class Config:
     def __init__(self, root_dir, current_model, top_k=5, embedding_size=200, tfidf_size=5000,
                  hidden_size=100, att_size=100, kernel_size=(2, 3, 4, 5), filter_dim=50,
                  block_num=5, head_num=5, model_dim=200, fc_size_s=200, fc_size_m=500, fc_size_l=1000,
-                 num_epoch=30, batch_size=32, sentence_len=500, sequence_len=100, document_len=20,
-                 optimizer='Adam', lr=0.001, keep_prob=0.8, l2_rate=0.0):
+                 num_epoch=30, batch_size=16, sentence_len=500, sequence_len=100, document_len=20,
+                 optimizer='Adam', lr=0.001, keep_prob=0.8, l2_rate=0.0, use_batch_norm=False):
 
         self.root_dir = root_dir
 
@@ -85,3 +85,4 @@ class Config:
         self.lr = lr
         self.keep_prob = keep_prob
         self.l2_rate = l2_rate
+        self.use_batch_norm = use_batch_norm

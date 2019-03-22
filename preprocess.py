@@ -90,7 +90,7 @@ def preprocess(config):
     get_data_text(config.test_data, config.plain_text, to_lower=True)
 
     print('build word dict')
-    build_word_dict(config.plain_text, config.word_count, config.word_dict, vocab_size=100000, to_lower=True)
+    build_word_dict(config.plain_text, config.word_count, config.word_dict, vocab_size=200000, to_lower=True)
 
     print('train word embedding')
     util.train_embedding(config.plain_text, config.embedding_size, config.word2vec_model)
@@ -100,5 +100,5 @@ def preprocess(config):
 
 
 if __name__ == '__main__':
-    config = Config('/home/babao/001_workspaces/001_python/charge_new/', 'temp')
+    config = Config('./', 'temp')
     preprocess(config)

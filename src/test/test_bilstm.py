@@ -72,11 +72,11 @@ def test(config, judger, config_proto):
 
     with tf.variable_scope('model', reuse=None):
         test_model = BiLSTM(
-            accu_num=config.accu_num,
-            max_seq_len=config.sentence_len, hidden_size=config.hidden_size, fc_size=config.fc_size_s,
+            accu_num=config.accu_num, max_seq_len=config.sentence_len,
+            hidden_size=config.hidden_size, fc_size=config.fc_size_s,
             embedding_matrix=embedding_matrix, embedding_trainable=embedding_trainable,
             lr=config.lr, optimizer=config.optimizer, keep_prob=config.keep_prob, l2_rate=config.l2_rate,
-            is_training=False
+            use_batch_norm=config.use_batch_norm, is_training=False
         )
 
     test_data = read_data(config.test_data, word_2_id, accu_2_id, law_2_id, config)

@@ -2,14 +2,14 @@ import tensorflow as tf
 
 
 class HAN(object):
-    def __init__(self, accu_num,
-                 max_seq_len, max_doc_len, hidden_size, att_size, fc_size,
+    def __init__(self, accu_num, max_seq_len, max_doc_len,
+                 hidden_size, att_size, fc_size,
                  embedding_matrix, embedding_trainable,
-                 lr, optimizer, keep_prob, l2_rate, is_training):
+                 lr, optimizer, keep_prob, l2_rate, use_batch_norm, is_training):
         self.accu_num = accu_num
-
         self.max_seq_len = max_seq_len
         self.max_doc_len = max_doc_len
+
         self.hidden_size = hidden_size
         self.att_size = att_size
         self.fc_size = fc_size
@@ -19,13 +19,15 @@ class HAN(object):
             shape=embedding_matrix.shape,
             trainable=embedding_trainable,
             dtype=tf.float32,
-            name='embedding_matrix')
+            name='embedding_matrix'
+        )
         self.embedding_size = embedding_matrix.shape[-1]
 
         self.lr = lr
         self.optimizer = optimizer
         self.keep_prob = keep_prob
         self.l2_rate = l2_rate
+        self.use_batch_norm = use_batch_norm
 
         self.is_training = is_training
 
@@ -42,15 +44,13 @@ class HAN(object):
         self.fact_doc_len = tf.placeholder(dtype=tf.int32, shape=[None], name='fact_doc_len')
         self.accu = tf.placeholder(dtype=tf.float32, shape=[None, accu_num], name='accu')
 
-        # fact_em's shape = [batch_size, max_doc_len, max_seq_len, embedding_size]
         with tf.variable_scope('fact_embedding'):
             fact_em = self.fact_embedding_layer()
 
-        # fact_enc's shape = [batch_size, 2 * hidden_size]
         with tf.variable_scope('fact_encoder'):
             u_w = tf.get_variable(initializer=self.b_init, shape=[att_size], name='u_w')
             u_s = tf.get_variable(initializer=self.b_init, shape=[att_size], name='u_s')
-            fact_enc = self.fact_encoder(fact_em, self.fact_seq_len, self.fact_doc_len, u_w, u_s)
+            fact_enc = self.han_encoder(fact_em, self.fact_seq_len, self.fact_doc_len, u_w, u_s)
 
         with tf.variable_scope('output_layer'):
             self.task_1_output, task_1_loss = self.output_layer(fact_enc, self.accu, self.accu_num)
@@ -73,7 +73,7 @@ class HAN(object):
 
         return fact_em
 
-    def fact_encoder(self, inputs, seq_len, doc_len, u_w, u_s):
+    def han_encoder(self, inputs, seq_len, doc_len, u_w, u_s):
         with tf.variable_scope('sequence_level'):
             inputs = tf.reshape(inputs, [-1, self.max_seq_len, self.embedding_size])
             seq_len = tf.reshape(seq_len, [-1])
@@ -88,16 +88,15 @@ class HAN(object):
                 dtype=tf.float32
             )
 
-            # seq_output's shape = [batch_size, doc_len, seq_len, 2 * hidden_size]
             seq_output = tf.concat([output_fw, output_bw], axis=-1)
             seq_output = tf.reshape(seq_output, [-1, self.max_doc_len, self.max_seq_len, 2 * self.hidden_size])
+            if self.use_batch_norm:
+                seq_output = tf.layers.batch_normalization(seq_output, training=self.is_training)
 
-            # att_w's shape = [batch_size, doc_len, seq_len, 1]
             u = tf.layers.dense(seq_output, self.att_size, tf.nn.tanh, kernel_regularizer=self.regularizer)
             u_att = tf.reshape(u_w, [-1, 1, 1, self.att_size])
             att_w = tf.nn.softmax(tf.reduce_sum(u * u_att, axis=-1, keepdims=True), axis=-1)
 
-            # seq_output's shape = [batch_size, doc_len, 2 * hidden_size]
             seq_output = tf.reduce_sum(att_w * seq_output, axis=-2)
 
         with tf.variable_scope('document_level'):
@@ -113,15 +112,14 @@ class HAN(object):
                 dtype=tf.float32
             )
 
-            # doc_output's shape = [batch_size, doc_len, 2 * hidden_size]
             doc_output = tf.concat([output_fw, output_bw], axis=-1)
+            if self.use_batch_norm:
+                doc_output = tf.layers.batch_normalization(doc_output, training=self.is_training)
 
-            # att_s' shape = [batch_size, doc_len, 1]
             u = tf.layers.dense(doc_output, self.att_size, tf.nn.tanh, kernel_regularizer=self.regularizer)
             u_att = tf.reshape(u_s, [-1, 1, self.att_size])
-            att_s = tf.math.softmax(tf.reduce_sum(u * u_att, axis=-1, keepdims=True), axis=-1)
+            att_s = tf.nn.softmax(tf.reduce_sum(u * u_att, axis=-1, keepdims=True), axis=-1)
 
-            # doc_output's shape = [batch_size, 2 * hidden_size]
             doc_output = tf.reduce_sum(att_s * doc_output, axis=-2)
 
         return doc_output
@@ -153,4 +151,8 @@ class HAN(object):
             optimizer = tf.train.GradientDescentOptimizer(learning_rate=self.lr)
 
         train_op = optimizer.minimize(self.loss, global_step=global_step)
+        if self.use_batch_norm:
+            update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+            train_op = tf.group([train_op, update_ops])
+
         return global_step, train_op

@@ -75,7 +75,7 @@ def test(config, judger, config_proto):
             kernel_size=config.kernel_size[1], filter_dim=config.filter_dim, fc_size=config.fc_size_s,
             embedding_matrix=embedding_matrix, embedding_trainable=embedding_trainable,
             lr=config.lr, optimizer=config.optimizer, keep_prob=config.keep_prob, l2_rate=config.l2_rate,
-            is_training=False
+            use_batch_norm=config.use_batch_norm, is_training=False
         )
 
     test_data = read_data(config.test_data, word_2_id, accu_2_id, law_2_id, config)
