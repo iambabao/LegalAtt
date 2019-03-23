@@ -85,9 +85,9 @@ def preprocess(config):
         os.makedirs(config.embedding_dir)
 
     print('extract plain text')
-    get_data_text(config.train_data, config.plain_text, to_lower=True)
-    get_data_text(config.valid_data, config.plain_text, to_lower=True)
-    get_data_text(config.test_data, config.plain_text, to_lower=True)
+    # get_data_text(config.train_data, config.plain_text, to_lower=True)
+    # get_data_text(config.valid_data, config.plain_text, to_lower=True)
+    # get_data_text(config.test_data, config.plain_text, to_lower=True)
 
     print('build word dict')
     build_word_dict(config.plain_text, config.word_count, config.word_dict, vocab_size=200000, to_lower=True)
@@ -100,5 +100,7 @@ def preprocess(config):
 
 
 if __name__ == '__main__':
-    config = Config('./', 'temp')
+    config = Config('./', 'temp',
+                    num_epoch=None, batch_size=None,
+                    optimizer=None, lr=None, use_batch_norm=None)
     preprocess(config)
