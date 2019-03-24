@@ -72,10 +72,8 @@ def test(config, judger, config_proto):
 
     if os.path.exists(config.word2vec_model):
         embedding_matrix = load_embedding(config.word2vec_model, word_2_id.keys())
-        embedding_trainable = False
     else:
         embedding_matrix = np.random.uniform(-0.5, 0.5, [len(word_2_id), config.embedding_size])
-        embedding_trainable = True
 
     with tf.variable_scope('model', reuse=None):
         test_model = FactLaw(
@@ -83,7 +81,7 @@ def test(config, judger, config_proto):
             top_k=config.top_k, tfidf_size=config.tfidf_size,
             max_seq_len=config.sequence_len, max_doc_len=config.document_len,
             hidden_size=config.hidden_size, att_size=config.att_size, fc_size=config.fc_size_s,
-            embedding_matrix=embedding_matrix, embedding_trainable=embedding_trainable,
+            embedding_matrix=embedding_matrix, embedding_trainable=config.embedding_trainable,
             lr=config.lr, optimizer=config.optimizer, keep_prob=config.keep_prob, l2_rate=config.l2_rate,
             use_batch_norm=config.use_batch_norm, is_training=False
         )

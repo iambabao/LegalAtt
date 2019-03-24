@@ -40,8 +40,8 @@ def pad_sequence(seq, max_len, pad_item):
 
 def train_embedding(text_file, embedding_size, model_file):
     data = []
-    with codecs.open(text_file, 'r', encoding='utf-8') as f_in:
-        for line in f_in:
+    with codecs.open(text_file, 'r', encoding='utf-8') as fin:
+        for line in fin:
             data.append(line.strip().split())
 
     model = Word2Vec(data, size=embedding_size, window=5, min_count=5)
@@ -58,7 +58,7 @@ def load_embedding(model_file, word_list):
         else:
             embedding_matrix.append(np.zeros(model.vector_size))
 
-    return np.asarray(embedding_matrix)
+    return np.array(embedding_matrix)
 
 
 def make_batch_iter(data, batch_size, shuffle):
@@ -76,8 +76,8 @@ def make_batch_iter(data, batch_size, shuffle):
 
 
 def read_dict(dict_file):
-    with codecs.open(dict_file, 'r', encoding='utf-8') as f_in:
-        key_2_id = json.load(f_in)
+    with codecs.open(dict_file, 'r', encoding='utf-8') as fin:
+        key_2_id = json.load(fin)
         id_2_key = dict(zip(key_2_id.values(), key_2_id.keys()))
 
     return key_2_id, id_2_key

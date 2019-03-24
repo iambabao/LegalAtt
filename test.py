@@ -11,6 +11,7 @@ parser.add_argument('--num_epoch', default=30)
 parser.add_argument('--batch_size', default=32)
 parser.add_argument('--optimizer', default='Adam')
 parser.add_argument('--lr', default=0.001)
+parser.add_argument('--embedding_trainable', default=True)
 parser.add_argument('--use_batch_norm', default=False)
 args = parser.parse_args()
 
@@ -19,10 +20,11 @@ num_epoch = args.num_epoch
 batch_size = args.batch_size
 optimizer = args.optimizer
 lr = args.lr
+embedding_trainable = args.embedding_trainable
 use_batch_norm = args.use_batch_norm
 config = Config('./', current_model,
-                num_epoch=num_epoch, batch_size=batch_size,
-                optimizer=optimizer, lr=lr, use_batch_norm=use_batch_norm)
+                num_epoch=num_epoch, batch_size=batch_size, optimizer=optimizer, lr=lr,
+                embedding_trainable=embedding_trainable, use_batch_norm=use_batch_norm)
 
 print('Current model: ', config.current_model)
 if config.current_model == 'fasttext':

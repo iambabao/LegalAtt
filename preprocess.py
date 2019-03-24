@@ -11,30 +11,30 @@ from src import util
 
 
 def get_data_text(data_file, text_file, to_lower=True):
-    f_out = codecs.open(text_file, 'a+', encoding='utf-8')
+    fout = codecs.open(text_file, 'a+', encoding='utf-8')
 
     counter = 0
     print('read file: ', data_file)
-    with codecs.open(data_file, 'r', encoding='utf-8') as f_in:
-        for line in f_in:
+    with codecs.open(data_file, 'r', encoding='utf-8') as fin:
+        for line in fin:
             fact = json.loads(line)['fact']
             fact = fact.strip()
             if to_lower:
                 fact = fact.lower()
-            print(fact, file=f_out)
+            print(fact, file=fout)
             counter += 1
             if counter % 10000 == 0:
                 print('processing: ', counter)
 
-    f_out.close()
+    fout.close()
 
 
 def build_word_dict(data_file, word_count_file, word_dict_file, vocab_size, to_lower=True):
     counter = collections.Counter()
 
     print('read file: ', data_file)
-    with codecs.open(data_file, 'r', encoding='utf-8') as f_in:
-        for line in f_in:
+    with codecs.open(data_file, 'r', encoding='utf-8') as fin:
+        for line in fin:
             for word in line.strip().split():
                 if to_lower:
                     word = word.lower()
@@ -53,8 +53,8 @@ def build_word_dict(data_file, word_count_file, word_dict_file, vocab_size, to_l
     del counter
 
     print('write file: ', word_count_file)
-    with codecs.open(word_count_file, 'w', encoding='utf-8') as f_out:
-        json.dump(sorted_counter, f_out, ensure_ascii=False, indent=4)
+    with codecs.open(word_count_file, 'w', encoding='utf-8') as fout:
+        json.dump(sorted_counter, fout, ensure_ascii=False, indent=4)
 
     word_2_id = {config.pad: config.pad_id, config.unk: config.unk_id, config.num: config.num_id}
     for word in sorted_counter.keys():
@@ -63,13 +63,13 @@ def build_word_dict(data_file, word_count_file, word_dict_file, vocab_size, to_l
             break
 
     print('write file: ', word_dict_file)
-    with codecs.open(word_dict_file, 'w', encoding='utf-8') as f_out:
-        json.dump(word_2_id, f_out, ensure_ascii=False, indent=4)
+    with codecs.open(word_dict_file, 'w', encoding='utf-8') as fout:
+        json.dump(word_2_id, fout, ensure_ascii=False, indent=4)
 
 
 def train_tfidf(data_file, feature_size, model_file):
-    with codecs.open(data_file, 'r', encoding='utf-8') as f_in:
-        data = f_in.readlines()
+    with codecs.open(data_file, 'r', encoding='utf-8') as fin:
+        data = fin.readlines()
 
     tfidf = TFIDF(
         max_features=feature_size,
@@ -101,6 +101,6 @@ def preprocess(config):
 
 if __name__ == '__main__':
     config = Config('./', 'temp',
-                    num_epoch=None, batch_size=None,
-                    optimizer=None, lr=None, use_batch_norm=None)
+                    num_epoch=None, batch_size=None, optimizer=None, lr=None,
+                    embedding_trainable=None, use_batch_norm=None)
     preprocess(config)
