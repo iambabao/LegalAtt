@@ -73,7 +73,7 @@ def train_tfidf(data_file, feature_size, model_file):
 
     tfidf = TFIDF(
         max_features=feature_size,
-        ngram_range=(1, 3)
+        ngram_range=(1, 2)
     )
     tfidf.fit(data)
 
