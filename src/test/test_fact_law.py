@@ -99,10 +99,18 @@ def test(config, judger, config_proto):
         inference(sess, test_model, test_batch_iter, kb_data, config, verbose=True)
 
         for threshold in config.task_threshold:
-            result = judger.my_test(config.test_data, config.test_result + '-' + str(threshold) + '.json')
-            accu_micro_f1, accu_macro_f1 = judger.calc_f1(result[0])
-            article_micro_f1, article_macro_f1 = judger.calc_f1(result[1])
-            score = judger.get_score(result)
+            result = judger.test(config.test_data, config.test_result + '-' + str(threshold) + '.json')
+            accu_micro_f1, accu_macro_f1, accu_res = judger.calc_f1(result[0])
+            with codecs.open(config.accu_result + '-' + str(threshold) + '.json', 'w', encoding='utf-8') as fout:
+                for i in range(config.accu_num):
+                    accu_res[i]['accu'] = id_2_accu[i]
+                    print(json.dumps(accu_res[i], ensure_ascii=False), file=fout)
+            article_micro_f1, article_macro_f1, article_res = judger.calc_f1(result[1])
+            with codecs.open(config.article_result + '-' + str(threshold) + '.json', 'w', encoding='utf-8') as fout:
+                for i in range(config.article_num):
+                    article_res[i]['art'] = id_2_law[i]
+                    print(json.dumps(article_res[i], ensure_ascii=False), file=fout)
+            score = [(accu_micro_f1 + accu_macro_f1) / 2, (article_micro_f1 + article_macro_f1) / 2]
             print('Threshold: %.3f' % threshold)
             print('Micro-F1 of accusation: %.3f' % accu_micro_f1)
             print('Macro-F1 of accusation: %.3f' % accu_macro_f1)

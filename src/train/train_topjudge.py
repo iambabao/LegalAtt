@@ -146,10 +146,10 @@ def train(config, judger, config_proto):
             print('==========  Saving model  ==========')
             saver.save(sess, config.model_file)
             for threshold in config.task_threshold:
-                result = judger.my_test(config.valid_data, config.valid_result + '-' + str(threshold) + '.json')
-                accu_micro_f1, accu_macro_f1 = judger.calc_f1(result[0])
-                article_micro_f1, article_macro_f1 = judger.calc_f1(result[1])
-                score = judger.get_score(result)
+                result = judger.test(config.valid_data, config.valid_result + '-' + str(threshold) + '.json')
+                accu_micro_f1, accu_macro_f1, _ = judger.calc_f1(result[0])
+                article_micro_f1, article_macro_f1, _ = judger.calc_f1(result[1])
+                score = [(accu_micro_f1 + accu_macro_f1) / 2, (article_micro_f1 + article_macro_f1) / 2]
                 print('Threshold: %.3f' % threshold)
                 print('Micro-F1 of accusation: %.3f' % accu_micro_f1)
                 print('Macro-F1 of accusation: %.3f' % accu_macro_f1)

@@ -35,6 +35,8 @@ class Config:
         self.model_file = os.path.join(self.result_dir, 'model')
         self.valid_result = os.path.join(self.result_dir, 'valid_result')
         self.test_result = os.path.join(self.result_dir, 'test_result')
+        self.accu_result = os.path.join(self.result_dir, 'accusation')
+        self.article_result = os.path.join(self.result_dir, 'article')
 
         self.pad = 'PAD'
         self.pad_id = 0
