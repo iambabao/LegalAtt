@@ -92,6 +92,14 @@ class LawAtt(object):
                 kernel_regularizer=self.regularizer
             )
 
+            value = tf.layers.dense(
+                fact_enc,
+                self.att_size,
+                tf.nn.tanh,
+                use_bias=False,
+                kernel_regularizer=self.regularizer
+            )
+
             law_atts = []
             with tf.variable_scope('get_attention', reuse=tf.AUTO_REUSE):
                 for art_enc, art_len, score in zip(art_enc_splits, art_len_splits, score_splits):
@@ -113,7 +121,7 @@ class LawAtt(object):
             ones = tf.ones_like(batch_weight, dtype=tf.float32)
             batch_weight = tf.where(batch_weight > 0, batch_weight, ones)
 
-            fact_enc_with_att = [tf.matmul(law_att, fact_enc) for law_att in law_atts]
+            fact_enc_with_att = [tf.matmul(law_att, value) for law_att in law_atts]
             fact_enc_with_att = tf.add_n(fact_enc_with_att) / batch_weight
 
         with tf.variable_scope('highway'):
@@ -161,8 +169,6 @@ class LawAtt(object):
         )
 
         output = tf.concat([output_fw, output_bw], axis=-1)
-        if self.use_batch_norm:
-            output = tf.layers.batch_normalization(output, training=self.is_training)
 
         return output
 
@@ -178,8 +184,6 @@ class LawAtt(object):
         )
 
         output = tf.concat([output_fw, output_bw], axis=-1)
-        if self.use_batch_norm:
-            output = tf.layers.batch_normalization(output, training=self.is_training)
 
         return output
 
@@ -195,8 +199,6 @@ class LawAtt(object):
                     activation=tf.nn.relu,
                     kernel_regularizer=self.regularizer
                 )
-                if self.use_batch_norm:
-                    conv = tf.layers.batch_normalization(conv, training=self.is_training)
 
                 enc_output.append(conv)
 
@@ -206,12 +208,15 @@ class LawAtt(object):
 
     def get_top_k_indices(self, inputs):
         inputs = tf.reduce_max(inputs, axis=-2)
-        scores = tf.layers.dense(inputs, self.article_num, kernel_regularizer=self.regularizer)
+        fc_output = tf.layers.dense(inputs, self.fc_size, kernel_regularizer=self.regularizer)
+        if self.is_training and self.keep_prob < 1.0:
+            fc_output = tf.nn.dropout(fc_output, keep_prob=self.keep_prob)
+        scores = tf.layers.dense(fc_output, self.article_num, kernel_regularizer=self.regularizer)
 
         if self.is_training:
             top_k_score, top_k_indices = tf.math.top_k(self.article, k=self.top_k)
         else:
-            top_k_score, top_k_indices = tf.math.top_k(scores, k=self.top_k)
+            top_k_score, top_k_indices = tf.math.top_k(tf.nn.sigmoid(scores), k=self.top_k)
 
         return scores, top_k_score, top_k_indices
 
