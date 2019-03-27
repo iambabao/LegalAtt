@@ -8,7 +8,6 @@ class Config:
                  hidden_size=100, att_size=100, kernel_size=(2, 3, 4, 5), filter_dim=50,
                  block_num=5, head_num=5, model_dim=200, fc_size_s=200, fc_size_m=500, fc_size_l=1000,
                  keep_prob=0.8, l2_rate=0.0, use_batch_norm=False):
-
         self.root_dir = root_dir
 
         self.temp_dir = os.path.join(self.root_dir, 'temp')

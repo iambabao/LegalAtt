@@ -95,7 +95,8 @@ class HAN(object):
 
             u = tf.layers.dense(seq_output, self.att_size, tf.nn.tanh, kernel_regularizer=self.regularizer)
             u_att = tf.reshape(u_w, [-1, 1, 1, self.att_size])
-            att_w = tf.nn.softmax(tf.reduce_sum(u * u_att, axis=-1, keepdims=True), axis=-1)
+            att_w = tf.nn.softmax(tf.reduce_sum(u * u_att, axis=-1), axis=-1)
+            att_w = tf.reshape(att_w, [-1, self.max_doc_len, self.max_seq_len, 1])
 
             seq_output = tf.reduce_sum(att_w * seq_output, axis=-2)
 
@@ -118,7 +119,8 @@ class HAN(object):
 
             u = tf.layers.dense(doc_output, self.att_size, tf.nn.tanh, kernel_regularizer=self.regularizer)
             u_att = tf.reshape(u_s, [-1, 1, self.att_size])
-            att_s = tf.nn.softmax(tf.reduce_sum(u * u_att, axis=-1, keepdims=True), axis=-1)
+            att_s = tf.nn.softmax(tf.reduce_sum(u * u_att, axis=-1), axis=-1)
+            att_s = tf.reshape(att_s, [-1, self.max_doc_len, 1])
 
             doc_output = tf.reduce_sum(att_s * doc_output, axis=-2)
 
