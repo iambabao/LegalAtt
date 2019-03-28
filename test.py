@@ -6,13 +6,13 @@ from src.config import Config
 from src.judger import Judger
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--model', '-m', required=True)
-parser.add_argument('--num_epoch', default=30)
-parser.add_argument('--batch_size', default=32)
-parser.add_argument('--optimizer', default='Adam')
-parser.add_argument('--lr', default=0.001)
-parser.add_argument('--embedding_trainable', default=False)
-parser.add_argument('--use_batch_norm', default=False)
+parser.add_argument('--model', '-m', type=str, required=True)
+parser.add_argument('--num_epoch', type=int, default=30)
+parser.add_argument('--batch_size', type=int, default=32)
+parser.add_argument('--optimizer', type=str, default='Adam')
+parser.add_argument('--lr', type=float, default=0.001)
+parser.add_argument('--embedding_trainable', action='store_true', default=False)
+parser.add_argument('--use_batch_norm', action='store_true', default=False)
 args = parser.parse_args()
 
 current_model = args.model
