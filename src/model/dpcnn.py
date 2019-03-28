@@ -3,11 +3,12 @@ import math
 
 
 class DPCNN(object):
-    def __init__(self, accu_num, max_seq_len,
+    def __init__(self, accu_num, article_num, max_seq_len,
                  kernel_size, filter_dim, fc_size,
                  embedding_matrix, embedding_trainable,
                  lr, optimizer, keep_prob, l2_rate, use_batch_norm, is_training):
         self.accu_num = accu_num
+        self.article_num = article_num
         self.max_seq_len = max_seq_len
 
         self.kernel_size = kernel_size
@@ -41,6 +42,7 @@ class DPCNN(object):
 
         self.fact = tf.placeholder(dtype=tf.int32, shape=[None, max_seq_len], name='fact')
         self.accu = tf.placeholder(dtype=tf.float32, shape=[None, accu_num], name='accu')
+        self.article = tf.placeholder(dtype=tf.float32, shape=[None, article_num], name='article')
 
         # fact_em's shape = [batch_size, max_seq_len, embedding_size]
         with tf.variable_scope('fact_embedding'):
@@ -52,9 +54,10 @@ class DPCNN(object):
 
         with tf.variable_scope('output_layer'):
             self.task_1_output, task_1_loss = self.output_layer(fact_enc, self.accu, self.accu_num)
+            self.task_2_output, task_2_loss = self.output_layer(fact_enc, self.article, self.article_num)
 
         with tf.variable_scope('loss'):
-            self.loss = task_1_loss
+            self.loss = task_1_loss + task_2_loss
             if self.regularizer is not None:
                 l2_loss = tf.add_n(tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES))
                 self.loss += l2_loss

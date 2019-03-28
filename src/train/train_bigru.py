@@ -29,12 +29,12 @@ def inference(sess, model, batch_iter, config, verbose=True):
             model.fact_len: fact_len
         }
 
-        _task_1_output = sess.run(
-            model.task_1_output,
+        _task_1_output, _task_2_output = sess.run(
+            [model.task_1_output, model.task_2_output],
             feed_dict=feed_dict
         )
         task_1_output.extend(_task_1_output.tolist())
-        task_2_output.extend([[0.0] * config.article_num] * batch_size)
+        task_2_output.extend(_task_2_output.tolist())
         task_3_output.extend([[0.0] * config.imprisonment_num] * batch_size)
     print('\ncost time: %.3fs' % (time.time() - start_time))
 
@@ -63,14 +63,15 @@ def run_epoch(sess, model, batch_iter, config, verbose=True):
     _global_step = 0
     start_time = time.time()
     for batch in batch_iter:
-        fact, fact_len, accu, _, _ = list(zip(*batch))
+        fact, fact_len, accu, article, _ = list(zip(*batch))
 
         fact = pad_fact_batch(fact, config)
 
         feed_dict = {
             model.fact: fact,
             model.fact_len: fact_len,
-            model.accu: accu
+            model.accu: accu,
+            model.article: article
         }
 
         _, _loss, _global_step = sess.run(
@@ -105,7 +106,7 @@ def train(config, judger, config_proto):
 
     with tf.variable_scope('model', reuse=None):
         train_model = BiGRU(
-            accu_num=config.accu_num, max_seq_len=config.sentence_len,
+            accu_num=config.accu_num, article_num=config.article_num, max_seq_len=config.sentence_len,
             hidden_size=config.hidden_size, fc_size=config.fc_size_s,
             embedding_matrix=embedding_matrix, embedding_trainable=config.embedding_trainable,
             lr=config.lr, optimizer=config.optimizer, keep_prob=config.keep_prob, l2_rate=config.l2_rate,
@@ -113,7 +114,7 @@ def train(config, judger, config_proto):
         )
     with tf.variable_scope('model', reuse=True):
         valid_model = BiGRU(
-            accu_num=config.accu_num, max_seq_len=config.sentence_len,
+            accu_num=config.accu_num, article_num=config.article_num, max_seq_len=config.sentence_len,
             hidden_size=config.hidden_size, fc_size=config.fc_size_s,
             embedding_matrix=embedding_matrix, embedding_trainable=config.embedding_trainable,
             lr=config.lr, optimizer=config.optimizer, keep_prob=config.keep_prob, l2_rate=config.l2_rate,

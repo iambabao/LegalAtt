@@ -29,12 +29,12 @@ def inference(sess, model, batch_iter, config, verbose=True):
             model.fact_len: fact_len
         }
 
-        _task_1_output = sess.run(
-            model.task_1_output,
+        _task_1_output, _task_2_output = sess.run(
+            [model.task_1_output, model.task_2_output],
             feed_dict=feed_dict
         )
         task_1_output.extend(_task_1_output.tolist())
-        task_2_output.extend([[0.0] * config.article_num] * batch_size)
+        task_2_output.extend(_task_2_output.tolist())
         task_3_output.extend([[0.0] * config.imprisonment_num] * batch_size)
     print('\ncost time: %.3fs' % (time.time() - start_time))
 
@@ -70,7 +70,7 @@ def test(config, judger, config_proto):
 
     with tf.variable_scope('model', reuse=None):
         test_model = FastText(
-            accu_num=config.accu_num, max_seq_len=config.sentence_len,
+            accu_num=config.accu_num, article_num=config.article_num, max_seq_len=config.sentence_len,
             fc_size=config.fc_size_s,
             embedding_matrix=embedding_matrix, embedding_trainable=config.embedding_trainable,
             lr=config.lr, optimizer=config.optimizer, keep_prob=config.keep_prob, l2_rate=config.l2_rate,
