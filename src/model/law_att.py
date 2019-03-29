@@ -92,14 +92,6 @@ class LawAtt(object):
                 kernel_regularizer=self.regularizer
             )
 
-            value = tf.layers.dense(
-                fact_enc,
-                self.att_size,
-                tf.nn.tanh,
-                use_bias=False,
-                kernel_regularizer=self.regularizer
-            )
-
             law_atts = []
             with tf.variable_scope('get_attention', reuse=tf.AUTO_REUSE):
                 for art_enc, art_len, score in zip(art_enc_splits, art_len_splits, score_splits):
@@ -121,7 +113,7 @@ class LawAtt(object):
             ones = tf.ones_like(batch_weight, dtype=tf.float32)
             batch_weight = tf.where(batch_weight > 0, batch_weight, ones)
 
-            fact_enc_with_att = [tf.matmul(law_att, value) for law_att in law_atts]
+            fact_enc_with_att = [tf.matmul(law_att, fact_enc) for law_att in law_atts]
             fact_enc_with_att = tf.add_n(fact_enc_with_att) / batch_weight
 
         with tf.variable_scope('highway'):
