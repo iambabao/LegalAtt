@@ -84,8 +84,7 @@ def read_dict(dict_file):
 
 
 def refine_text(text):
-    text = text.replace(' ', '')
-    text = re.sub(r'[\r\n\t]', '', text)
+    text = re.sub(r'\s', '', text)
     text = [_ for _ in jieba.cut(text, cut_all=False)]
     return text
 

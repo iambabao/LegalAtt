@@ -81,7 +81,7 @@ class LawAtt(object):
         with tf.variable_scope('attention_layer'):
             ones = tf.ones_like(top_k_score, dtype=tf.float32)
             zeros = tf.zeros_like(top_k_score, dtype=tf.float32)
-            relevant_score = tf.where(top_k_score > 0.3, ones, zeros)
+            relevant_score = tf.where(top_k_score > 0.4, ones, zeros)
             score_splits = tf.split(relevant_score, self.top_k, axis=1)
 
             key = tf.layers.dense(
@@ -127,7 +127,7 @@ class LawAtt(object):
 
             ones = tf.ones_like(art_score, dtype=tf.float32)
             zeros = tf.zeros_like(art_score, dtype=tf.float32)
-            self.task_2_output = tf.where(tf.nn.sigmoid(art_score) > 0.3, ones, zeros)
+            self.task_2_output = tf.where(tf.nn.sigmoid(art_score) > 0.4, ones, zeros)
 
         with tf.variable_scope('loss'):
             task_2_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.article, logits=art_score))
@@ -200,10 +200,7 @@ class LawAtt(object):
 
     def get_top_k_indices(self, inputs):
         inputs = tf.reduce_max(inputs, axis=-2)
-        fc_output = tf.layers.dense(inputs, self.fc_size, kernel_regularizer=self.regularizer)
-        if self.is_training and self.keep_prob < 1.0:
-            fc_output = tf.nn.dropout(fc_output, keep_prob=self.keep_prob)
-        scores = tf.layers.dense(fc_output, self.article_num, kernel_regularizer=self.regularizer)
+        scores = tf.layers.dense(inputs, self.article_num, kernel_regularizer=self.regularizer)
 
         if self.is_training:
             top_k_score, top_k_indices = tf.math.top_k(self.article, k=self.top_k)

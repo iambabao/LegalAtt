@@ -7,7 +7,7 @@ from src.judger import Judger
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--model', '-m', type=str, required=True)
-parser.add_argument('--num_epoch', type=int, default=30)
+parser.add_argument('--num_epoch', type=int, default=20)
 parser.add_argument('--batch_size', type=int, default=32)
 parser.add_argument('--optimizer', type=str, default='Adam')
 parser.add_argument('--lr', type=float, default=0.001)
