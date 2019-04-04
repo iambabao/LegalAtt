@@ -223,15 +223,18 @@ class LawAtt(object):
         return article_em
 
     def get_attention(self, query, key, query_len, key_len):
-        att = tf.nn.softmax(tf.matmul(query, key, transpose_b=True), axis=-1)
+        att = tf.matmul(query, key, transpose_b=True)
 
         mask_query = tf.sequence_mask(query_len, maxlen=self.max_seq_len, dtype=tf.float32)
         mask_key = tf.sequence_mask(key_len, maxlen=self.max_seq_len, dtype=tf.float32)
         mask = tf.matmul(tf.expand_dims(mask_query, axis=-1), tf.expand_dims(mask_key, axis=-2))
+        inf = 1e10 * tf.ones_like(att, dtype=tf.float32)
+        masked_att = tf.where(mask > 0.0, att, -inf)
 
-        att = mask * att
+        masked_att = tf.nn.softmax(masked_att, axis=-1)
+        masked_att = mask * masked_att
 
-        return att
+        return masked_att
 
     def output_layer(self, inputs, labels, label_num):
         fc_output = tf.layers.dense(inputs, self.fc_size, kernel_regularizer=self.regularizer)
