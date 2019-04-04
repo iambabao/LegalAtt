@@ -109,18 +109,18 @@ class LawAtt(object):
                     law_att = score * self.get_attention(query, key, art_len, self.fact_len)
                     law_atts.append(law_att)
 
-            batch_weight = tf.reshape(tf.reduce_sum(relevant_score, axis=-1), [-1, 1, 1])
+            # prevent dividing by zero
+            batch_weight = tf.reshape(tf.reduce_sum(relevant_score, axis=-1), [-1, 1])
             ones = tf.ones_like(batch_weight, dtype=tf.float32)
             batch_weight = tf.where(batch_weight > 0, batch_weight, ones)
 
-            fact_enc_with_att = [tf.matmul(law_att, fact_enc) for law_att in law_atts]
+            fact_enc_with_att = [tf.reduce_max(tf.matmul(law_att, fact_enc), axis=-2) for law_att in law_atts]
             fact_enc_with_att = tf.add_n(fact_enc_with_att) / batch_weight
 
         with tf.variable_scope('highway'):
-            fact_enc_with_att = fact_enc_with_att + fact_enc
+            fact_enc_with_att = fact_enc_with_att + tf.reduce_max(fact_enc, axis=-2)
             if self.use_batch_norm:
                 fact_enc_with_att = tf.layers.batch_normalization(fact_enc_with_att, training=self.is_training)
-            fact_enc_with_att = tf.reduce_max(fact_enc_with_att, axis=-2)
 
         with tf.variable_scope('output_layer'):
             self.task_1_output, task_1_loss = self.output_layer(fact_enc_with_att, self.accu, self.accu_num)
