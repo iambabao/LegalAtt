@@ -85,7 +85,15 @@ def read_dict(dict_file):
 
 def refine_text(text):
     text = re.sub(r'\s', '', text)
-    text = [_ for _ in jieba.cut(text, cut_all=False)]
+
+    text = re.sub(r'\d{4}年(\d{1,2}月份?)?(\d{1,2}日)?(\d{1,2}时)?(\d{1,2}分)?(许|左右)?', 'TIME', text)
+    text = re.sub(r'同年\d{1,2}月份?(\d{1,2}日)?(\d{1,2}时)?(\d{1,2}分)?(许|左右)?', 'TIME', text)
+    text = re.sub(r'同月\d{1,2}日(\d{1,2}时)?(\d{1,2}分)?(许|左右)?', 'TIME', text)
+    text = re.sub(r'同日\d{1,2}时(\d{1,2}分)?(许|左右)?', 'TIME', text)
+
+    text = re.sub(r'\d*[xX]+\d*', 'PAD', text)
+
+    text = jieba.lcut(text, cut_all=False)
     return text
 
 

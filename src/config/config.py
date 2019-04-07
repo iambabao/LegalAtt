@@ -41,9 +41,9 @@ class Config:
         self.pad_id = 0
         self.unk = 'UNK'
         self.unk_id = 1
-        self.num = 'NUM'
-        self.num_id = 2
-        self.vocab_size = 100000
+        self.time = 'TIME'
+        self.time_id = 2
+        self.vocab_size = 200000
 
         self.accu_num = 100
         self.article_num = 91

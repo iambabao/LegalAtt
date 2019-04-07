@@ -41,10 +41,9 @@ def build_word_dict(data_file, word_count_file, word_dict_file, vocab_size, to_l
                 counter[word] += 1
     print('number of words: ', len(counter))
 
-    del counter[' ']
     del counter[config.pad]
     del counter[config.unk]
-    del counter[config.num]
+    del counter[config.time]
     sorted_counter = dict(sorted(
         counter.items(),
         key=itemgetter(1),
@@ -56,7 +55,7 @@ def build_word_dict(data_file, word_count_file, word_dict_file, vocab_size, to_l
     with codecs.open(word_count_file, 'w', encoding='utf-8') as fout:
         json.dump(sorted_counter, fout, ensure_ascii=False, indent=4)
 
-    word_2_id = {config.pad: config.pad_id, config.unk: config.unk_id, config.num: config.num_id}
+    word_2_id = {config.pad: config.pad_id, config.unk: config.unk_id, config.time: config.time_id}
     for word in sorted_counter.keys():
         word_2_id[word] = len(word_2_id)
         if len(word_2_id) >= vocab_size:
@@ -90,7 +89,7 @@ def preprocess(config):
     # get_data_text(config.test_data, config.plain_text, to_lower=True)
 
     print('build word dict')
-    build_word_dict(config.plain_text, config.word_count, config.word_dict, vocab_size=200000, to_lower=True)
+    build_word_dict(config.plain_text, config.word_count, config.word_dict, vocab_size=config.vocab_size, to_lower=True)
 
     print('train word embedding')
     util.train_embedding(config.plain_text, config.embedding_size, config.word2vec_model)
