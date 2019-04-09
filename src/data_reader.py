@@ -18,8 +18,7 @@ def read_data(data_file, word_2_id, accu_2_id, law_2_id, config):
         for line in fin:
             item = json.loads(line, encoding='utf-8')
 
-            _fact = item['fact'].strip().lower()
-            _fact = _fact.split()
+            _fact = item['fact'].strip().split()
             _fact = util.convert_to_id_list(_fact, word_2_id, config.pad_id, config.unk_id)
             _fact = _fact[:config.sentence_len]
             fact.append(_fact)
@@ -66,8 +65,7 @@ def read_data_doc(data_file, word_2_id, accu_2_id, law_2_id, config):
         for line in fin:
             item = json.loads(line, encoding='utf-8')
 
-            _fact = item['fact'].strip().lower()
-            _fact = _fact.split()
+            _fact = item['fact'].strip().split()
             _fact = util.refine_doc(_fact, config.sequence_len, config.document_len)
             _fact = [util.convert_to_id_list(seq, word_2_id, config.pad_id, config.unk_id) for seq in _fact]
             fact.append(_fact)
@@ -120,8 +118,7 @@ def read_data_doc_v2(data_file, word_2_id, accu_2_id, law_2_id, config):
         for line in fin:
             item = json.loads(line, encoding='utf-8')
 
-            _fact = item['fact'].strip().lower()
-            _fact = _fact.split()
+            _fact = item['fact'].strip().split()
             corpus.append(' '.join(_fact))
 
             _fact = util.refine_doc(_fact, config.sequence_len, config.document_len)

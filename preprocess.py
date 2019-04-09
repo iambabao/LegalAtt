@@ -10,7 +10,7 @@ from src.config import Config
 from src import util
 
 
-def get_data_text(data_file, text_file, to_lower=True):
+def get_data_text(data_file, text_file, to_lower=False):
     fout = codecs.open(text_file, 'a+', encoding='utf-8')
 
     counter = 0
@@ -29,7 +29,7 @@ def get_data_text(data_file, text_file, to_lower=True):
     fout.close()
 
 
-def build_word_dict(data_file, word_count_file, word_dict_file, vocab_size, to_lower=True):
+def build_word_dict(data_file, word_count_file, word_dict_file, vocab_size, to_lower=False):
     counter = collections.Counter()
 
     print('read file: ', data_file)
@@ -84,12 +84,12 @@ def preprocess(config):
         os.makedirs(config.embedding_dir)
 
     print('extract plain text')
-    # get_data_text(config.train_data, config.plain_text, to_lower=True)
-    # get_data_text(config.valid_data, config.plain_text, to_lower=True)
-    # get_data_text(config.test_data, config.plain_text, to_lower=True)
+    # get_data_text(config.train_data, config.plain_text)
+    # get_data_text(config.valid_data, config.plain_text)
+    # get_data_text(config.test_data, config.plain_text)
 
     print('build word dict')
-    build_word_dict(config.plain_text, config.word_count, config.word_dict, vocab_size=config.vocab_size, to_lower=True)
+    build_word_dict(config.plain_text, config.word_count, config.word_dict, vocab_size=config.vocab_size)
 
     print('train word embedding')
     util.train_embedding(config.plain_text, config.embedding_size, config.word2vec_model)

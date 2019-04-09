@@ -1,9 +1,15 @@
 import os
 import argparse
 import tensorflow as tf
+import jieba
 
 from src.config import Config
 from src.judger import Judger
+
+jieba.add_word('PAD', 9999, 'n')
+jieba.add_word('UNK', 9999, 'n')
+jieba.add_word('NUM', 9999, 'n')
+jieba.add_word('TIME', 9999, 'n')
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--model', '-m', type=str, required=True)
