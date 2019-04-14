@@ -1,7 +1,7 @@
 import tensorflow as tf
 
 
-class LawAtt(object):
+class LawAttV2(object):
     def __init__(self, accu_num, article_num, top_k, max_seq_len,
                  hidden_size, att_size, kernel_size, filter_dim, fc_size,
                  embedding_matrix, embedding_trainable,
@@ -64,13 +64,11 @@ class LawAtt(object):
 
         with tf.variable_scope('article_encoder', reuse=tf.AUTO_REUSE):
             art_em_splits = tf.split(top_k_art_em, self.top_k, axis=1)
-            art_len_splits = tf.split(top_k_art_len, self.top_k, axis=1)
 
             art_enc_splits = []
             for art_em in art_em_splits:
                 art_em = tf.reshape(art_em, [-1, self.max_seq_len, self.embedding_size])
-
-                art_enc = self.cnn_encoder(art_em)
+                art_enc = tf.reduce_max(self.cnn_encoder(art_em), axis=-2, keepdims=True)
                 art_enc_splits.append(art_enc)
 
         with tf.variable_scope('attention_layer'):
@@ -89,10 +87,7 @@ class LawAtt(object):
 
             law_atts = []
             with tf.variable_scope('get_attention', reuse=tf.AUTO_REUSE):
-                for art_enc, art_len, score in zip(art_enc_splits, art_len_splits, score_splits):
-                    art_len = tf.reshape(art_len, [-1])
-                    score = tf.reshape(score, [-1, 1, 1])
-
+                for art_enc, score in zip(art_enc_splits, score_splits):
                     query = tf.layers.dense(
                         art_enc,
                         self.att_size,
@@ -101,21 +96,22 @@ class LawAtt(object):
                         kernel_regularizer=self.regularizer
                     )
 
-                    law_att = score * self.get_attention(query, key, art_len, self.fact_len)
+                    law_att = score * self.get_attention(query, key, self.fact_len)
                     law_atts.append(law_att)
 
             # prevent dividing by zero
             batch_weight = tf.reshape(tf.reduce_sum(relevant_score, axis=-1), [-1, 1])
             ones = tf.ones_like(batch_weight, dtype=tf.float32)
-            batch_weight = tf.where(batch_weight > 0, batch_weight, ones)
+            batch_weight = tf.where(batch_weight > 0.0, batch_weight, ones)
 
-            fact_enc_with_att = [tf.reduce_max(tf.matmul(law_att, fact_enc), axis=-2) for law_att in law_atts]
+            fact_enc_with_att = []
+            for law_att in law_atts:
+                law_att = tf.reshape(law_att, [-1, self.max_seq_len, 1])
+                fact_enc_with_att.append(tf.reduce_sum(law_att * fact_enc, axis=-2))
             fact_enc_with_att = tf.add_n(fact_enc_with_att) / batch_weight
 
         with tf.variable_scope('highway'):
             fact_enc_with_att = fact_enc_with_att + tf.reduce_max(fact_enc, axis=-2)
-            if self.use_batch_norm:
-                fact_enc_with_att = tf.layers.batch_normalization(fact_enc_with_att, training=self.is_training)
 
         with tf.variable_scope('output_layer'):
             self.task_1_output, task_1_loss = self.output_layer(fact_enc_with_att, self.accu, self.accu_num)
@@ -153,13 +149,11 @@ class LawAtt(object):
                     filters=self.filter_dim,
                     kernel_size=kernel_size,
                     padding='same',
-                    activation=tf.nn.relu,
                     kernel_regularizer=self.regularizer
                 )
                 if self.use_batch_norm:
                     conv = tf.layers.batch_normalization(conv, training=self.is_training)
                 conv = tf.nn.relu(conv)
-
                 enc_output.append(conv)
 
         enc_output = tf.concat(enc_output, axis=-1)
@@ -190,13 +184,11 @@ class LawAtt(object):
 
         return article_em
 
-    def get_attention(self, query, key, query_len, key_len):
-        att = tf.matmul(query, key, transpose_b=True)
+    def get_attention(self, query, key, key_len):
+        att = tf.reduce_sum(query * key, axis=-1)
 
-        mask_query = tf.sequence_mask(query_len, maxlen=self.max_seq_len, dtype=tf.float32)
-        mask_key = tf.sequence_mask(key_len, maxlen=self.max_seq_len, dtype=tf.float32)
-        mask = tf.matmul(tf.expand_dims(mask_query, axis=-1), tf.expand_dims(mask_key, axis=-2))
-        inf = 1e10 * tf.ones_like(att, dtype=tf.float32)
+        mask = tf.sequence_mask(key_len, maxlen=self.max_seq_len, dtype=tf.float32)
+        inf = 1e10 * tf.ones_like(mask, dtype=tf.float32)
 
         masked_att = tf.where(mask > 0.0, att, -inf)
         masked_att = tf.nn.softmax(masked_att, axis=-1)

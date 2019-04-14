@@ -50,8 +50,8 @@ class HAN(object):
             fact_em = self.fact_embedding_layer()
 
         with tf.variable_scope('fact_encoder'):
-            u_w = tf.get_variable(initializer=self.b_init, shape=[att_size], name='u_w')
-            u_s = tf.get_variable(initializer=self.b_init, shape=[att_size], name='u_s')
+            u_w = tf.get_variable(initializer=self.w_init, shape=[att_size], name='u_w')
+            u_s = tf.get_variable(initializer=self.w_init, shape=[att_size], name='u_s')
             fact_enc = self.han_encoder(fact_em, self.fact_seq_len, self.fact_doc_len, u_w, u_s)
 
         with tf.variable_scope('output_layer'):
@@ -77,6 +77,9 @@ class HAN(object):
         return fact_em
 
     def han_encoder(self, inputs, seq_len, doc_len, u_w, u_s):
+        seq_mask = tf.sequence_mask(seq_len, maxlen=self.max_seq_len, dtype=tf.float32)
+        doc_mask = tf.sequence_mask(doc_len, maxlen=self.max_doc_len, dtype=tf.float32)
+
         with tf.variable_scope('sequence_level'):
             inputs = tf.reshape(inputs, [-1, self.max_seq_len, self.embedding_size])
             seq_len = tf.reshape(seq_len, [-1])
@@ -98,14 +101,17 @@ class HAN(object):
 
             u = tf.layers.dense(seq_output, self.att_size, tf.nn.tanh, kernel_regularizer=self.regularizer)
             u_att = tf.reshape(u_w, [-1, 1, 1, self.att_size])
-            att_w = tf.nn.softmax(tf.reduce_sum(u * u_att, axis=-1), axis=-1)
-            att_w = tf.reshape(att_w, [-1, self.max_doc_len, self.max_seq_len, 1])
+            att = tf.reduce_sum(u_att * u, axis=-1)
 
-            seq_output = tf.reduce_sum(att_w * seq_output, axis=-2)
+            inf = 1e10 * tf.ones_like(seq_mask, dtype=tf.float32)
+
+            masked_att = tf.where(seq_mask > 0.0, att, -inf)
+            masked_att = tf.nn.softmax(masked_att, axis=-1)
+            masked_att = tf.reshape(seq_mask * masked_att, [-1, self.max_doc_len, self.max_seq_len, 1])
+
+            seq_output = tf.reduce_sum(masked_att * seq_output, axis=-2)
 
         with tf.variable_scope('document_level'):
-            doc_len = tf.reshape(doc_len, [-1])
-
             cell_fw = tf.nn.rnn_cell.GRUCell(self.hidden_size)
             cell_bw = tf.nn.rnn_cell.GRUCell(self.hidden_size)
             (output_fw, output_bw), _ = tf.nn.bidirectional_dynamic_rnn(
@@ -122,10 +128,15 @@ class HAN(object):
 
             u = tf.layers.dense(doc_output, self.att_size, tf.nn.tanh, kernel_regularizer=self.regularizer)
             u_att = tf.reshape(u_s, [-1, 1, self.att_size])
-            att_s = tf.nn.softmax(tf.reduce_sum(u * u_att, axis=-1), axis=-1)
-            att_s = tf.reshape(att_s, [-1, self.max_doc_len, 1])
+            att = tf.reduce_sum(u_att * u, axis=-1)
 
-            doc_output = tf.reduce_sum(att_s * doc_output, axis=-2)
+            inf = 1e10 * tf.ones_like(doc_mask, dtype=tf.float32)
+
+            masked_att = tf.where(doc_mask > 0.0, att, -inf)
+            masked_att = tf.nn.softmax(masked_att, axis=-1)
+            masked_att = tf.reshape(doc_mask * masked_att, [-1, self.max_doc_len, 1])
+
+            doc_output = tf.reduce_sum(masked_att * doc_output, axis=-2)
 
         return doc_output
 

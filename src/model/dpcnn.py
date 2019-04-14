@@ -44,11 +44,9 @@ class DPCNN(object):
         self.accu = tf.placeholder(dtype=tf.float32, shape=[None, accu_num], name='accu')
         self.article = tf.placeholder(dtype=tf.float32, shape=[None, article_num], name='article')
 
-        # fact_em's shape = [batch_size, max_seq_len, embedding_size]
         with tf.variable_scope('fact_embedding'):
             fact_em = self.fact_embedding_layer()
 
-        # fact_enc's shape = [batch_size, filter_dim]
         with tf.variable_scope('fact_encoder'):
             fact_enc = self.dpcnn_encoder(fact_em, max_seq_len)
 
@@ -84,21 +82,25 @@ class DPCNN(object):
                 pre_output,
                 filters=self.filter_dim,
                 kernel_size=self.kernel_size,
-                activation=tf.nn.relu,
                 padding='same',
                 kernel_regularizer=self.regularizer
             )
+            if self.use_batch_norm:
+                cur_block = tf.layers.batch_normalization(cur_block, training=self.is_training)
+            cur_block = tf.nn.relu(cur_block)
+
             cur_block = tf.layers.conv1d(
                 cur_block,
                 filters=self.filter_dim,
                 kernel_size=self.kernel_size,
-                activation=tf.nn.relu,
                 padding='same',
                 kernel_regularizer=self.regularizer
             )
-            cur_output = tf.add(cur_block, pre_output)
             if self.use_batch_norm:
-                cur_output = tf.layers.batch_normalization(cur_output, training=self.is_training)
+                cur_block = tf.layers.batch_normalization(cur_block, training=self.is_training)
+            cur_block = tf.nn.relu(cur_block)
+
+            cur_output = tf.add(cur_block, pre_output)
             cur_output = tf.layers.max_pooling1d(cur_output, pool_size=3, strides=2, padding='same')
 
             output_len = math.ceil(output_len / 2)

@@ -3,7 +3,7 @@ import os
 
 class Config:
     def __init__(self, root_dir, current_model, num_epoch, batch_size, optimizer, lr, embedding_trainable,
-                 sentence_len=500, sequence_len=100, document_len=20,
+                 sentence_len=300, sequence_len=100, document_len=20,
                  top_k=5, embedding_size=200, tfidf_size=5000,
                  hidden_size=100, att_size=100, kernel_size=(2, 3, 4, 5), filter_dim=50,
                  block_num=5, head_num=5, model_dim=200, fc_size_s=200, fc_size_m=500, fc_size_l=1000,

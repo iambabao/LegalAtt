@@ -33,13 +33,7 @@ config = Config('./', current_model,
                 embedding_trainable=embedding_trainable, use_batch_norm=use_batch_norm)
 
 print('Current model: ', config.current_model)
-if config.current_model == 'fasttext':
-    from src.train.train_fasttext import train
-elif config.current_model == 'bilstm':
-    from src.train.train_bilstm import train
-elif config.current_model == 'bigru':
-    from src.train.train_bigru import train
-elif config.current_model == 'han':
+if config.current_model == 'han':
     from src.train.train_han import train
 elif config.current_model == 'cnn':
     from src.train.train_cnn import train
@@ -51,6 +45,8 @@ elif config.current_model == 'fact_law':
     from src.train.train_fact_law import train
 elif config.current_model == 'law_att':
     from src.train.train_law_att import train
+elif config.current_model == 'law_att_v2':
+    from src.train.train_law_att_v2 import train
 else:
     print('No model named: ', config.current_model)
     exit()

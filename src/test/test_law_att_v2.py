@@ -6,11 +6,13 @@ import numpy as np
 import tensorflow as tf
 
 from src.util import read_dict, init_dict, load_embedding, make_batch_iter, id_2_imprisonment, get_task_result
-from src.data_reader import read_data, pad_fact_batch
-from src.model import BiLSTM
+from src.data_reader import read_data, pad_fact_batch, read_law_kb
+from src.model import LawAttV2
 
 
-def inference(sess, model, batch_iter, config, verbose=True):
+def inference(sess, model, batch_iter, kb_data, config, verbose=True):
+    law_kb, law_len = kb_data
+
     task_1_output = []
     task_2_output = []
     task_3_output = []
@@ -26,13 +28,16 @@ def inference(sess, model, batch_iter, config, verbose=True):
 
         feed_dict = {
             model.fact: fact,
-            model.fact_len: fact_len
+            model.fact_len: fact_len,
+            model.law_kb: [law_kb] * batch_size,
+            model.law_len: [law_len] * batch_size
         }
 
         _task_1_output, _task_2_output = sess.run(
             [model.task_1_output, model.task_2_output],
             feed_dict=feed_dict
         )
+
         task_1_output.extend(_task_1_output.tolist())
         task_2_output.extend(_task_2_output.tolist())
         task_3_output.extend([[0.0] * config.imprisonment_num] * batch_size)
@@ -58,7 +63,7 @@ def inference(sess, model, batch_iter, config, verbose=True):
 
 
 def test(config, judger, config_proto):
-    assert config.current_model == 'bilstm'
+    assert config.current_model == 'law_att_v2'
 
     word_2_id, id_2_word = read_dict(config.word_dict)
     law_2_id, id_2_law, accu_2_id, id_2_accu = init_dict(config.law_dict, config.accu_dict)
@@ -69,15 +74,18 @@ def test(config, judger, config_proto):
         embedding_matrix = np.random.uniform(-0.5, 0.5, [len(word_2_id), config.embedding_size])
 
     with tf.variable_scope('model', reuse=None):
-        test_model = BiLSTM(
-            accu_num=config.accu_num, article_num=config.article_num, max_seq_len=config.sentence_len,
-            hidden_size=config.hidden_size, fc_size=config.fc_size_s,
+        test_model = LawAttV2(
+            accu_num=config.accu_num, article_num=config.article_num,
+            top_k=config.top_k, max_seq_len=config.sentence_len,
+            hidden_size=config.hidden_size, att_size=config.att_size,
+            kernel_size=config.kernel_size, filter_dim=config.filter_dim, fc_size=config.fc_size_s,
             embedding_matrix=embedding_matrix, embedding_trainable=config.embedding_trainable,
             lr=config.lr, optimizer=config.optimizer, keep_prob=config.keep_prob, l2_rate=config.l2_rate,
             use_batch_norm=config.use_batch_norm, is_training=False
         )
 
     test_data = read_data(config.test_data, word_2_id, accu_2_id, law_2_id, config)
+    kb_data = read_law_kb(id_2_law, word_2_id, config)
 
     saver = tf.train.Saver()
     with tf.Session(config=config_proto) as sess:
@@ -86,7 +94,7 @@ def test(config, judger, config_proto):
 
         print('==========  Test  ==========')
         test_batch_iter = make_batch_iter(list(zip(*test_data)), config.batch_size, shuffle=False)
-        inference(sess, test_model, test_batch_iter, config, verbose=True)
+        inference(sess, test_model, test_batch_iter, kb_data, config, verbose=True)
 
         for threshold in config.task_threshold:
             result = judger.test(config.test_data, config.test_result + '-' + str(threshold) + '.json')

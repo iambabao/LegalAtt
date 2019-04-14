@@ -83,7 +83,7 @@ def preprocess(config):
     if not os.path.exists(config.embedding_dir):
         os.makedirs(config.embedding_dir)
 
-    print('extract plain text')
+    # print('extract plain text')
     # get_data_text(config.train_data, config.plain_text)
     # get_data_text(config.valid_data, config.plain_text)
     # get_data_text(config.test_data, config.plain_text)

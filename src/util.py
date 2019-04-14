@@ -44,7 +44,7 @@ def train_embedding(text_file, embedding_size, model_file):
         for line in fin:
             data.append(line.strip().split())
 
-    model = Word2Vec(data, size=embedding_size, window=5, min_count=5, workers=6)
+    model = Word2Vec(data, size=embedding_size, window=5, min_count=5, workers=8)
     model.save(model_file)
 
 
@@ -90,8 +90,9 @@ def refine_text(text):
     text = re.sub(r'同年\d{1,2}月份?(\d{1,2}日)?(\d{1,2}时)?(\d{1,2}分)?(许|左右)?', 'TIME', text)
     text = re.sub(r'同月\d{1,2}日(\d{1,2}时)?(\d{1,2}分)?(许|左右)?', 'TIME', text)
     text = re.sub(r'同日\d{1,2}时(\d{1,2}分)?(许|左右)?', 'TIME', text)
+    text = re.sub(r'\d{1,2}时(\d{1,2}分)?(许|左右)?', 'TIME', text)
 
-    text = re.sub(r'\d*[xX]+\d*', 'PAD', text)
+    text = re.sub(r'\d*([×xX])+\d*', 'PAD', text)
 
     text = jieba.lcut(text, cut_all=False)
     return text
@@ -112,16 +113,8 @@ def refine_doc(data, max_seq_len, max_doc_len):
             beg = end
     if beg != end:
         doc.append(data[beg:min(end, beg + max_seq_len)])
-    beg = 0
-    while len(doc) > max_doc_len and beg < len(doc) - 1:
-        if len(doc[beg]) + len(doc[beg + 1]) <= max_seq_len:
-            doc[beg].extend(doc[beg + 1])
-            del doc[beg + 1]
-        else:
-            beg += 1
 
-    doc = doc[:max_doc_len]
-    return doc
+    return doc[:max_doc_len]
 
 
 def init_dict(law_dict, accu_dict):

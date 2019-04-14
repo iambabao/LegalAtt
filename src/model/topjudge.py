@@ -92,11 +92,11 @@ class TopJudge(object):
                     filters=self.filter_dim,
                     kernel_size=kernel_size,
                     padding='same',
-                    activation=tf.nn.relu,
                     kernel_regularizer=self.regularizer
                 )
                 if self.use_batch_norm:
                     conv = tf.layers.batch_normalization(conv, training=self.is_training)
+                conv = tf.nn.relu(conv)
                 pool = tf.reduce_max(conv, axis=-2)
 
                 enc_output.append(pool)

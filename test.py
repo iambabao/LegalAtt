@@ -33,13 +33,7 @@ config = Config('./', current_model,
                 embedding_trainable=embedding_trainable, use_batch_norm=use_batch_norm)
 
 print('Current model: ', config.current_model)
-if config.current_model == 'fasttext':
-    from src.test.test_fasttext import test
-elif config.current_model == 'bilstm':
-    from src.test.test_bilstm import test
-elif config.current_model == 'bigru':
-    from src.test.test_bigru import test
-elif config.current_model == 'han':
+if config.current_model == 'han':
     from src.test.test_han import test
 elif config.current_model == 'cnn':
     from src.test.test_cnn import test
@@ -51,6 +45,8 @@ elif config.current_model == 'fact_law':
     from src.test.test_fact_law import test
 elif config.current_model == 'law_att':
     from src.test.test_law_att import test
+elif config.current_model == 'law_att_v2':
+    from src.test.test_law_att_v2 import test
 else:
     print('No model named: ', config.current_model)
     exit()

@@ -6,11 +6,13 @@ import numpy as np
 import tensorflow as tf
 
 from src.util import read_dict, init_dict, load_embedding, make_batch_iter, id_2_imprisonment, get_task_result
-from src.data_reader import read_data, pad_fact_batch
-from src.model import BiGRU
+from src.data_reader import read_data, pad_fact_batch, read_law_kb
+from src.model import LawAttV2
 
 
-def inference(sess, model, batch_iter, config, verbose=True):
+def inference(sess, model, batch_iter, kb_data, config, verbose=True):
+    law_kb, law_len = kb_data
+
     task_1_output = []
     task_2_output = []
     task_3_output = []
@@ -26,13 +28,16 @@ def inference(sess, model, batch_iter, config, verbose=True):
 
         feed_dict = {
             model.fact: fact,
-            model.fact_len: fact_len
+            model.fact_len: fact_len,
+            model.law_kb: [law_kb] * batch_size,
+            model.law_len: [law_len] * batch_size
         }
 
         _task_1_output, _task_2_output = sess.run(
             [model.task_1_output, model.task_2_output],
             feed_dict=feed_dict
         )
+
         task_1_output.extend(_task_1_output.tolist())
         task_2_output.extend(_task_2_output.tolist())
         task_3_output.extend([[0.0] * config.imprisonment_num] * batch_size)
@@ -57,7 +62,9 @@ def inference(sess, model, batch_iter, config, verbose=True):
                 print(json.dumps(r), file=f_out)
 
 
-def run_epoch(sess, model, batch_iter, config, verbose=True):
+def run_epoch(sess, model, batch_iter, kb_data, config, verbose=True):
+    law_kb, law_len = kb_data
+
     steps = 0
     total_loss = 0.0
     _global_step = 0
@@ -65,11 +72,14 @@ def run_epoch(sess, model, batch_iter, config, verbose=True):
     for batch in batch_iter:
         fact, fact_len, accu, article, _ = list(zip(*batch))
 
+        batch_size = len(fact)
         fact = pad_fact_batch(fact, config)
 
         feed_dict = {
             model.fact: fact,
             model.fact_len: fact_len,
+            model.law_kb: [law_kb] * batch_size,
+            model.law_len: [law_len] * batch_size,
             model.accu: accu,
             model.article: article
         }
@@ -91,7 +101,7 @@ def run_epoch(sess, model, batch_iter, config, verbose=True):
 
 
 def train(config, judger, config_proto):
-    assert config.current_model == 'bigru'
+    assert config.current_model == 'law_att_v2'
 
     if not os.path.exists(config.result_dir):
         os.makedirs(config.result_dir)
@@ -105,17 +115,21 @@ def train(config, judger, config_proto):
         embedding_matrix = np.random.uniform(-0.5, 0.5, [len(word_2_id), config.embedding_size])
 
     with tf.variable_scope('model', reuse=None):
-        train_model = BiGRU(
-            accu_num=config.accu_num, article_num=config.article_num, max_seq_len=config.sentence_len,
-            hidden_size=config.hidden_size, fc_size=config.fc_size_s,
+        train_model = LawAttV2(
+            accu_num=config.accu_num, article_num=config.article_num,
+            top_k=config.top_k, max_seq_len=config.sentence_len,
+            hidden_size=config.hidden_size, att_size=config.att_size,
+            kernel_size=config.kernel_size, filter_dim=config.filter_dim, fc_size=config.fc_size_s,
             embedding_matrix=embedding_matrix, embedding_trainable=config.embedding_trainable,
             lr=config.lr, optimizer=config.optimizer, keep_prob=config.keep_prob, l2_rate=config.l2_rate,
             use_batch_norm=config.use_batch_norm, is_training=True
         )
     with tf.variable_scope('model', reuse=True):
-        valid_model = BiGRU(
-            accu_num=config.accu_num, article_num=config.article_num, max_seq_len=config.sentence_len,
-            hidden_size=config.hidden_size, fc_size=config.fc_size_s,
+        valid_model = LawAttV2(
+            accu_num=config.accu_num, article_num=config.article_num,
+            top_k=config.top_k, max_seq_len=config.sentence_len,
+            hidden_size=config.hidden_size, att_size=config.att_size,
+            kernel_size=config.kernel_size, filter_dim=config.filter_dim, fc_size=config.fc_size_s,
             embedding_matrix=embedding_matrix, embedding_trainable=config.embedding_trainable,
             lr=config.lr, optimizer=config.optimizer, keep_prob=config.keep_prob, l2_rate=config.l2_rate,
             use_batch_norm=config.use_batch_norm, is_training=False
@@ -123,6 +137,7 @@ def train(config, judger, config_proto):
 
     train_data = read_data(config.train_data, word_2_id, accu_2_id, law_2_id, config)
     valid_data = read_data(config.valid_data, word_2_id, accu_2_id, law_2_id, config)
+    kb_data = read_law_kb(id_2_law, word_2_id, config)
 
     saver = tf.train.Saver(max_to_keep=1)
     with tf.Session(config=config_proto) as sess:
@@ -132,12 +147,12 @@ def train(config, judger, config_proto):
         for i in range(config.num_epoch):
             print('==========  Epoch %2d Train  ==========' % (i + 1))
             train_batch_iter = make_batch_iter(list(zip(*train_data)), config.batch_size, shuffle=True)
-            train_loss, global_step = run_epoch(sess, train_model, train_batch_iter, config, verbose=True)
+            train_loss, global_step = run_epoch(sess, train_model, train_batch_iter, kb_data, config, verbose=True)
             print('The average train loss of epoch %2d is %.3f' % ((i + 1), train_loss))
 
             print('==========  Epoch %2d Valid  ==========' % (i + 1))
             valid_batch_iter = make_batch_iter(list(zip(*valid_data)), config.batch_size, shuffle=False)
-            inference(sess, valid_model, valid_batch_iter, config, verbose=True)
+            inference(sess, valid_model, valid_batch_iter, kb_data, config, verbose=True)
 
             print('==========  Saving model  ==========')
             saver.save(sess, config.model_file)

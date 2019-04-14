@@ -76,6 +76,10 @@ class FactLaw(object):
             art_doc_len_splits = tf.split(top_k_art_doc_len, self.top_k, axis=1)
             enc_outputs = []
             for art_em, seq_len, doc_len in zip(art_em_splits, art_seq_len_splits, art_doc_len_splits):
+                art_em = tf.reshape(art_em, [-1, self.max_seq_len, self.max_doc_len, 2 * self.hidden_size])
+                seq_len = tf.reshape(seq_len, [-1, max_doc_len])
+                doc_len = tf.reshape(doc_len, [-1])
+
                 enc_output = self.document_encoder(art_em, seq_len, doc_len, u_aw, u_as)
                 enc_output = tf.expand_dims(enc_output, axis=1)
                 enc_outputs.append(enc_output)
@@ -105,19 +109,14 @@ class FactLaw(object):
         self.global_step, self.train_op = self.get_train_op()
 
     def get_top_k_indices(self):
-        scores = tf.layers.dense(
-            self.tfidf,
-            self.article_num,
-            tf.nn.tanh,
-            kernel_regularizer=self.regularizer
-        )
+        scores = tf.layers.dense(self.tfidf, self.article_num, tf.nn.tanh, kernel_regularizer=self.regularizer)
 
         if self.is_training:
-            _, indices = tf.math.top_k(self.article, k=self.top_k)
+            _, top_k_indices = tf.math.top_k(self.article, k=self.top_k)
         else:
-            _, indices = tf.math.top_k(scores, k=self.top_k)
+            _, top_k_indices = tf.math.top_k(scores, k=self.top_k)
 
-        return scores, indices
+        return scores, top_k_indices
 
     def get_top_k_articles(self, top_k_indices):
         art = tf.batch_gather(self.law_kb, indices=top_k_indices)
@@ -141,6 +140,9 @@ class FactLaw(object):
         return art_em
 
     def document_encoder(self, inputs, seq_len, doc_len, u_w, u_s):
+        seq_mask = tf.sequence_mask(seq_len, maxlen=self.max_seq_len, dtype=tf.float32)
+        doc_mask = tf.sequence_mask(doc_len, maxlen=self.max_doc_len, dtype=tf.float32)
+
         with tf.variable_scope('sequence_level'):
             inputs = tf.reshape(inputs, [-1, self.max_seq_len, self.embedding_size])
             seq_len = tf.reshape(seq_len, [-1])
@@ -162,14 +164,17 @@ class FactLaw(object):
 
             u = tf.layers.dense(seq_output, self.att_size, tf.nn.tanh, kernel_regularizer=self.regularizer)
             u_att = tf.reshape(u_w, [-1, 1, 1, self.att_size])
-            att_w = tf.nn.softmax(tf.reduce_sum(u * u_att, axis=-1), axis=-1)
-            att_w = tf.reshape(att_w, [-1, self.max_doc_len, self.max_seq_len, 1])
+            att = tf.reduce_sum(u_att * u, axis=-1)
 
-            seq_output = tf.reduce_sum(att_w * seq_output, axis=-2)
+            inf = 1e10 * tf.ones_like(seq_mask, dtype=tf.float32)
+
+            masked_att = tf.where(seq_mask > 0.0, att, -inf)
+            masked_att = tf.nn.softmax(masked_att, axis=-1)
+            masked_att = tf.reshape(seq_mask * masked_att, [-1, self.max_doc_len, self.max_seq_len, 1])
+
+            seq_output = tf.reduce_sum(masked_att * seq_output, axis=-2)
 
         with tf.variable_scope('document_level'):
-            doc_len = tf.reshape(doc_len, [-1])
-
             cell_fw = tf.nn.rnn_cell.GRUCell(self.hidden_size)
             cell_bw = tf.nn.rnn_cell.GRUCell(self.hidden_size)
             (output_fw, output_bw), _ = tf.nn.bidirectional_dynamic_rnn(
@@ -186,10 +191,15 @@ class FactLaw(object):
 
             u = tf.layers.dense(doc_output, self.att_size, tf.nn.tanh, kernel_regularizer=self.regularizer)
             u_att = tf.reshape(u_s, [-1, 1, self.att_size])
-            att_s = tf.nn.softmax(tf.reduce_sum(u * u_att, axis=-1), axis=-1)
-            att_s = tf.reshape(att_s, [-1, self.max_doc_len, 1])
+            att = tf.reduce_sum(u_att * u, axis=-1)
 
-            doc_output = tf.reduce_sum(att_s * doc_output, axis=-2)
+            inf = 1e10 * tf.ones_like(doc_mask, dtype=tf.float32)
+
+            masked_att = tf.where(doc_mask > 0.0, att, -inf)
+            masked_att = tf.nn.softmax(masked_att, axis=-1)
+            masked_att = tf.reshape(doc_mask * masked_att, [-1, self.max_doc_len, 1])
+
+            doc_output = tf.reduce_sum(masked_att * doc_output, axis=-2)
 
         return doc_output
 
