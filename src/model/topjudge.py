@@ -57,13 +57,13 @@ class TopJudge(object):
             _, task_2_state = self.lstm_encoder(fact_enc, None)
             self.task_2_output, task_2_loss = self.output_layer(task_2_state.h, self.article, article_num)
 
-        with tf.variable_scope('task_3'):
-            _, task_3_state = self.lstm_encoder(fact_enc, [task_2_state])
-            self.task_3_output, task_3_loss = self.output_layer(task_3_state.h, self.imprisonment, imprisonment_num)
-
         with tf.variable_scope('task_1'):
-            _, task_1_state = self.lstm_encoder(fact_enc, [task_2_state, task_3_state])
+            _, task_1_state = self.lstm_encoder(fact_enc, [task_2_state])
             self.task_1_output, task_1_loss = self.output_layer(task_1_state.h, self.accu, accu_num)
+
+        with tf.variable_scope('task_3'):
+            _, task_3_state = self.lstm_encoder(fact_enc, [task_1_state, task_2_state])
+            self.task_3_output, task_3_loss = self.output_layer(task_3_state.h, self.imprisonment, imprisonment_num)
 
         with tf.variable_scope('loss'):
             self.loss = task_1_loss + task_2_loss + task_3_loss
