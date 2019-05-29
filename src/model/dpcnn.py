@@ -2,57 +2,62 @@ import tensorflow as tf
 import math
 
 
-class DPCNN(object):
-    def __init__(self, accu_num, article_num, max_seq_len,
-                 kernel_size, filter_dim, fc_size,
-                 embedding_matrix, embedding_trainable,
-                 lr, optimizer, keep_prob, l2_rate, use_batch_norm, is_training):
-        self.accu_num = accu_num
-        self.article_num = article_num
-        self.max_seq_len = max_seq_len
+class DPCNN:
+    def __init__(self, config, embedding_matrix, is_training):
+        self.accu_num = config.accu_num
+        self.art_num = config.art_num
+        self.impr_num = config.impr_num
 
-        self.kernel_size = kernel_size
-        self.filter_dim = filter_dim
-        self.fc_size = fc_size
+        self.max_seq_len = config.sequence_len
+
+        self.kernel_size = config.kernel_size[0]
+        self.filter_dim = config.filter_dim
+        self.fc_size = config.fc_size_s
 
         self.embedding_matrix = tf.get_variable(
             initializer=tf.constant_initializer(embedding_matrix),
             shape=embedding_matrix.shape,
-            trainable=embedding_trainable,
+            trainable=config.embedding_trainable,
             dtype=tf.float32,
             name='embedding_matrix'
         )
         self.embedding_size = embedding_matrix.shape[-1]
 
-        self.lr = lr
-        self.optimizer = optimizer
-        self.keep_prob = keep_prob
-        self.l2_rate = l2_rate
-        self.use_batch_norm = use_batch_norm
+        self.lr = config.lr
+        self.optimizer = config.optimizer
+        self.dropout = config.dropout
+        self.l2_rate = config.l2_rate
+        self.use_batch_norm = config.use_batch_norm
+        self.multi_label = config.multi_label
 
         self.is_training = is_training
 
         self.w_init = tf.truncated_normal_initializer(stddev=0.1)
         self.b_init = tf.constant_initializer(0.1)
 
-        if l2_rate > 0.0:
-            self.regularizer = tf.contrib.layers.l2_regularizer(l2_rate)
+        if self.l2_rate > 0.0:
+            self.regularizer = tf.keras.regularizers.l2(self.l2_rate)
         else:
             self.regularizer = None
 
-        self.fact = tf.placeholder(dtype=tf.int32, shape=[None, max_seq_len], name='fact')
-        self.accu = tf.placeholder(dtype=tf.float32, shape=[None, accu_num], name='accu')
-        self.article = tf.placeholder(dtype=tf.float32, shape=[None, article_num], name='article')
+        self.batch_size = tf.placeholder(dtype=tf.int32, shape=[], name='batch_size')
+        self.fact = tf.placeholder(dtype=tf.int32, shape=[None, self.max_seq_len], name='fact')
+        self.fact_len = tf.placeholder(dtype=tf.int32, shape=[None], name='fact_len')
+        self.art = tf.placeholder(dtype=tf.int32, shape=[None, self.art_num, self.max_seq_len], name='art')
+        self.art_len = tf.placeholder(dtype=tf.int32, shape=[None, self.art_num], name='art_len')
+        self.accu = tf.placeholder(dtype=tf.float32, shape=[None, self.accu_num], name='accu')
+        self.relevant_art = tf.placeholder(dtype=tf.float32, shape=[None, self.art_num], name='relevant_art')
+        self.impr = tf.placeholder(dtype=tf.float32, shape=[None, self.impr_num], name='impr')
 
         with tf.variable_scope('fact_embedding'):
-            fact_em = self.fact_embedding_layer()
+            fact_em = self.embedding_layer(self.fact)
 
         with tf.variable_scope('fact_encoder'):
-            fact_enc = self.dpcnn_encoder(fact_em, max_seq_len)
+            fact_enc = self.dpcnn_encoder(fact_em, self.max_seq_len)
 
         with tf.variable_scope('output_layer'):
             self.task_1_output, task_1_loss = self.output_layer(fact_enc, self.accu, self.accu_num)
-            self.task_2_output, task_2_loss = self.output_layer(fact_enc, self.article, self.article_num)
+            self.task_2_output, task_2_loss = self.output_layer(fact_enc, self.relevant_art, self.art_num)
 
         with tf.variable_scope('loss'):
             self.loss = task_1_loss + task_2_loss
@@ -65,43 +70,41 @@ class DPCNN(object):
 
         self.global_step, self.train_op = self.get_train_op()
 
-    def fact_embedding_layer(self):
-        fact_em = tf.nn.embedding_lookup(self.embedding_matrix, self.fact)
-        if self.is_training and self.keep_prob < 1.0:
-            fact_em = tf.nn.dropout(fact_em, keep_prob=self.keep_prob)
+    def embedding_layer(self, inputs):
+        inputs_em = tf.nn.embedding_lookup(self.embedding_matrix, inputs)
+        if self.is_training and self.dropout < 1.0:
+            inputs_em = tf.nn.dropout(inputs_em, rate=self.dropout)
 
-        return fact_em
+        return inputs_em
 
-    def dpcnn_encoder(self, inputs, seq_len):
-        output_len = seq_len
-        cur_output = tf.layers.dense(inputs, self.filter_dim, tf.nn.tanh, kernel_regularizer=self.regularizer)
+    def dpcnn_encoder(self, inputs, max_seq_len):
+        output_len = max_seq_len
+        cur_output = tf.keras.layers.Dense(self.filter_dim, kernel_regularizer=self.regularizer)(inputs)
         while output_len > 1:
             pre_output = cur_output
 
-            cur_block = tf.layers.conv1d(
-                pre_output,
-                filters=self.filter_dim,
-                kernel_size=self.kernel_size,
+            cur_block = tf.keras.layers.Conv1D(
+                self.filter_dim,
+                self.kernel_size,
                 padding='same',
                 kernel_regularizer=self.regularizer
-            )
+            )(pre_output)
             if self.use_batch_norm:
-                cur_block = tf.layers.batch_normalization(cur_block, training=self.is_training)
+                cur_block = tf.keras.layers.BatchNormalization()(cur_block)
             cur_block = tf.nn.relu(cur_block)
 
-            cur_block = tf.layers.conv1d(
-                cur_block,
-                filters=self.filter_dim,
-                kernel_size=self.kernel_size,
+            cur_block = tf.keras.layers.Conv1D(
+                self.filter_dim,
+                self.kernel_size,
                 padding='same',
                 kernel_regularizer=self.regularizer
-            )
+            )(cur_block)
             if self.use_batch_norm:
-                cur_block = tf.layers.batch_normalization(cur_block, training=self.is_training)
+                cur_block = tf.keras.layers.BatchNormalization()(cur_block)
             cur_block = tf.nn.relu(cur_block)
 
             cur_output = tf.add(cur_block, pre_output)
-            cur_output = tf.layers.max_pooling1d(cur_output, pool_size=3, strides=2, padding='same')
+            cur_output = tf.keras.layers.MaxPooling1D(self.kernel_size, 2, 'same')(cur_output)
 
             output_len = math.ceil(output_len / 2)
 
@@ -109,14 +112,17 @@ class DPCNN(object):
         return cur_output
 
     def output_layer(self, inputs, labels, label_num):
-        fc_output = tf.layers.dense(inputs, self.fc_size, kernel_regularizer=self.regularizer)
-        if self.is_training and self.keep_prob < 1.0:
-            fc_output = tf.nn.dropout(fc_output, keep_prob=self.keep_prob)
+        fc_output = tf.keras.layers.Dense(self.fc_size, kernel_regularizer=self.regularizer)(inputs)
+        if self.is_training and self.dropout < 1.0:
+            fc_output = tf.nn.dropout(fc_output, rate=self.dropout)
 
-        logits = tf.layers.dense(fc_output, label_num, kernel_regularizer=self.regularizer)
-        output = tf.nn.sigmoid(logits)
-
-        ce_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=labels, logits=logits))
+        logits = tf.keras.layers.Dense(label_num, kernel_regularizer=self.regularizer)(fc_output)
+        if self.multi_label:
+            output = tf.nn.sigmoid(logits)
+            ce_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=labels, logits=logits))
+        else:
+            output = tf.nn.softmax(logits)
+            ce_loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(labels=labels, logits=logits))
 
         return output, ce_loss
 
@@ -135,8 +141,5 @@ class DPCNN(object):
             optimizer = tf.train.GradientDescentOptimizer(learning_rate=self.lr)
 
         train_op = optimizer.minimize(self.loss, global_step=global_step)
-        if self.use_batch_norm:
-            update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
-            train_op = tf.group([train_op, update_ops])
 
         return global_step, train_op

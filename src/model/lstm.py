@@ -1,7 +1,7 @@
 import tensorflow as tf
 
 
-class TopJudge:
+class LSTM:
     def __init__(self, config, embedding_matrix, is_training):
         self.accu_num = config.accu_num
         self.art_num = config.art_num
@@ -9,8 +9,6 @@ class TopJudge:
 
         self.max_seq_len = config.sequence_len
 
-        self.kernel_size = config.kernel_size
-        self.filter_dim = config.filter_dim
         self.hidden_size = config.hidden_size
         self.fc_size = config.fc_size_s
 
@@ -30,10 +28,10 @@ class TopJudge:
         self.use_batch_norm = config.use_batch_norm
         self.multi_label = config.multi_label
 
-        self.is_training = is_training
-
         self.w_init = tf.truncated_normal_initializer(stddev=0.1)
         self.b_init = tf.constant_initializer(0.1)
+
+        self.is_training = is_training
 
         if self.l2_rate > 0.0:
             self.regularizer = tf.keras.regularizers.l2(self.l2_rate)
@@ -53,22 +51,14 @@ class TopJudge:
             fact_em = self.embedding_layer(self.fact)
 
         with tf.variable_scope('fact_encoder'):
-            fact_enc = self.cnn_encoder(fact_em)
+            fact_enc = self.lstm_encoder(fact_em, self.fact_len)
 
-        with tf.variable_scope('task_2'):
-            _, task_2_state = self.lstm_encoder(fact_enc, None)
-            self.task_2_output, task_2_loss = self.output_layer(task_2_state[1], self.relevant_art, self.art_num)
-
-        with tf.variable_scope('task_1'):
-            _, task_1_state = self.lstm_encoder(fact_enc, [task_2_state])
-            self.task_1_output, task_1_loss = self.output_layer(task_1_state[1], self.accu, self.accu_num)
-
-        with tf.variable_scope('task_3'):
-            _, task_3_state = self.lstm_encoder(fact_enc, [task_1_state, task_2_state])
-            self.task_3_output, task_3_loss = self.output_layer(task_3_state[1], self.impr, self.impr_num)
+        with tf.variable_scope('output_layer'):
+            self.task_1_output, task_1_loss = self.output_layer(fact_enc, self.accu, self.accu_num)
+            self.task_2_output, task_2_loss = self.output_layer(fact_enc, self.relevant_art, self.art_num)
 
         with tf.variable_scope('loss'):
-            self.loss = task_1_loss + task_2_loss + task_3_loss
+            self.loss = task_1_loss + task_2_loss
             if self.regularizer is not None:
                 l2_loss = tf.add_n(tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES))
                 self.loss += l2_loss
@@ -85,48 +75,12 @@ class TopJudge:
 
         return inputs_em
 
-    def cnn_encoder(self, inputs):
-        enc_output = []
-        for kernel_size in self.kernel_size:
-            conv = tf.keras.layers.Conv1D(
-                self.filter_dim,
-                kernel_size,
-                padding='same',
-                kernel_regularizer=self.regularizer
-            )(inputs)
-            if self.use_batch_norm:
-                conv = tf.keras.layers.BatchNormalization()(conv)
-            conv = tf.nn.relu(conv)
-            pool = tf.reduce_max(conv, axis=-2, keepdims=True)
-
-            enc_output.append(pool)
-
-        enc_output = tf.concat(enc_output, axis=-1)
+    def lstm_encoder(self, inputs, input_len):
+        enc_output = tf.keras.layers.LSTM(self.hidden_size, return_sequences=True)(inputs)
+        mask = tf.expand_dims(tf.sequence_mask(input_len, maxlen=self.max_seq_len, dtype=tf.float32), axis=-1)
+        enc_output = tf.reduce_max(mask * enc_output, axis=-2)
 
         return enc_output
-
-    def lstm_encoder(self, inputs, initial_state_list):
-        lstm = tf.keras.layers.LSTM(self.hidden_size, return_state=True)
-
-        if initial_state_list is not None:
-            new_c = []
-            new_h = []
-            for c, h in initial_state_list:
-                c = tf.keras.layers.Dense(self.hidden_size, kernel_regularizer=self.regularizer)(c)
-                new_c.append(c)
-
-                h = tf.keras.layers.Dense(self.hidden_size, kernel_regularizer=self.regularizer)(h)
-                new_h.append(h)
-
-            new_c = tf.math.add_n(new_c)
-            new_h = tf.math.add_n(new_h)
-            initial_state = [new_c, new_h]
-        else:
-            initial_state = lstm.get_initial_state(inputs)
-
-        enc_output, enc_state_c, enc_state_h = lstm(inputs, initial_state)
-
-        return enc_output, (enc_state_c, enc_state_h)
 
     def output_layer(self, inputs, labels, label_num):
         fc_output = tf.keras.layers.Dense(self.fc_size, kernel_regularizer=self.regularizer)(inputs)

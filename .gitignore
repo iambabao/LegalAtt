@@ -1,5 +1,5 @@
-.vscode/*
-.idea/*
+.vscode/
+.idea/
 log/*
 temp/*
 temp.*

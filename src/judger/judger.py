@@ -1,63 +1,59 @@
 import json
+from src.util import read_dict
 
 
 class Judger:
     # Initialize Judger, with the path of accusation list and law articles list
-    def __init__(self, accusation_path, law_path):
-        self.accu_dic = {}
+    def __init__(self, accu_dict, art_dict):
+        self.accu_2_id, self.id_2_accu = read_dict(accu_dict)
+        self.accu_num = len(self.accu_2_id)
 
-        f = open(accusation_path, 'r')
-        self.task1_cnt = 0
-        for line in f:
-            self.task1_cnt += 1
-            self.accu_dic[line[:-1]] = self.task1_cnt
-
-        self.law_dic = {}
-        f = open(law_path, 'r')
-        self.task2_cnt = 0
-        for line in f:
-            self.task2_cnt += 1
-            self.law_dic[int(line[:-1])] = self.task2_cnt
+        self.art_2_id, self.id_2_art = read_dict(art_dict)
+        self.art_num = len(self.art_2_id)
 
     # Gen new results according to the truth and users output
-    def gen_new_result(self, result, truth, label):
-        s1 = set(label['accusation'])
+    def gen_new_result(self, result, truth, pred):
+        s1 = set()
+        for v in pred['accusation']:
+            s1.add(self.accu_2_id[v])
         s2 = set()
-        for name in truth['accusation']:
-            s2.add(self.accu_dic[name.replace('[', '').replace(']', '')])
+        for v in truth['accusation']:
+            s2.add(self.accu_2_id[v])
 
-        for a in range(0, self.task1_cnt):
-            in1 = (a + 1) in s1
-            in2 = (a + 1) in s2
+        for v in range(self.accu_num):
+            in1 = v in s1
+            in2 = v in s2
             if in1:
                 if in2:
-                    result[0][a]['TP'] += 1
+                    result[0][v]['TP'] += 1
                 else:
-                    result[0][a]['FP'] += 1
+                    result[0][v]['FP'] += 1
             else:
                 if in2:
-                    result[0][a]['FN'] += 1
+                    result[0][v]['FN'] += 1
                 else:
-                    result[0][a]['TN'] += 1
+                    result[0][v]['TN'] += 1
 
-        s1 = set(label['articles'])
+        s1 = set()
+        for v in pred['relevant_articles']:
+            s1.add(self.art_2_id[str(v)])
         s2 = set()
-        for name in truth['relevant_articles']:
-            s2.add(self.law_dic[name])
+        for v in truth['relevant_articles']:
+            s2.add(self.art_2_id[str(v)])
 
-        for a in range(0, self.task2_cnt):
-            in1 = (a + 1) in s1
-            in2 = (a + 1) in s2
+        for v in range(self.art_num):
+            in1 = v in s1
+            in2 = v in s2
             if in1:
                 if in2:
-                    result[1][a]['TP'] += 1
+                    result[1][v]['TP'] += 1
                 else:
-                    result[1][a]['FP'] += 1
+                    result[1][v]['FP'] += 1
             else:
                 if in2:
-                    result[1][a]['FN'] += 1
+                    result[1][v]['FN'] += 1
                 else:
-                    result[1][a]['TN'] += 1
+                    result[1][v]['TN'] += 1
 
         return result
 
@@ -81,40 +77,34 @@ class Judger:
 
         return precision, recall, f1
 
-    def test(self, truth_file, output_file):
-        cnt = 0
+    def get_result(self, truth_file, pred_file):
         result = [[], []]
-        for a in range(0, self.task1_cnt):
+        for v in range(self.accu_num):
             result[0].append({'TP': 0, 'FP': 0, 'TN': 0, 'FN': 0})
-        for a in range(0, self.task2_cnt):
+        for v in range(self.art_num):
             result[1].append({'TP': 0, 'FP': 0, 'TN': 0, 'FN': 0})
 
-        truth_f = open(truth_file, 'r', encoding='utf-8')
-        output_f = open(output_file, 'r', encoding='utf-8')
+        f_truth = open(truth_file, 'r', encoding='utf-8')
+        f_pred = open(pred_file, 'r', encoding='utf-8')
 
-        for line in truth_f:
-            ground_truth = json.loads(line)['meta']
-            user_output = json.loads(output_f.readline())
+        for line in f_truth:
+            truth = json.loads(line)['meta']
+            pred = json.loads(f_pred.readline())
 
-            cnt += 1
-            result = self.gen_new_result(result, ground_truth, user_output)
+            result = self.gen_new_result(result, truth, pred)
 
         return result
 
     def calc_f1(self, result):
-        new_result = []
         sum_f = 0
-        y = {'TP': 0, 'FP': 0, 'FN': 0, 'TN': 0}
+        temp = {'TP': 0, 'FP': 0, 'FN': 0, 'TN': 0}
         for res in result:
             p, r, f = self.get_value(res)
             sum_f += f
-            for z in res.keys():
-                y[z] += res[z]
+            for v in res.keys():
+                temp[v] += res[v]
 
-            res['F1'] = f
-            new_result.append(res)
-
-        _, _, micro_f = self.get_value(y)
+        _, _, micro_f = self.get_value(temp)
         macro_f = sum_f / len(result)
 
-        return micro_f, macro_f, new_result
+        return micro_f, macro_f
