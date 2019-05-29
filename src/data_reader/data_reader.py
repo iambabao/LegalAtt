@@ -7,18 +7,6 @@ from src import util
 class DataReader:
     def __init__(self, config):
         self.config = config
-        self.stop_word = self.load_stop_word()
-
-    def load_stop_word(self):
-        stop_word = []
-        with open(self.config.stop_word, 'r', encoding='utf-8') as fin:
-            for line in fin:
-                stop_word.append(line.strip())
-        return stop_word
-
-    def remove_stop_word(self, word_list):
-        # return [word for word in word_list if word not in self.stop_word]
-        return word_list
 
     def read_data(self, data_file, word_2_id, accu_2_id, art_2_id):
         fact = []
@@ -31,7 +19,7 @@ class DataReader:
             for line in fin:
                 item = json.loads(line)
 
-                temp = self.remove_stop_word(item['fact'].strip().split())
+                temp = item['fact'].strip().split()
                 temp = util.convert_list(temp, word_2_id, self.config.pad_id, self.config.unk_id)
                 temp = temp[:self.config.sequence_len]
                 fact.append(temp)
@@ -88,7 +76,7 @@ class DataReader:
         fact = []
         fact_len = []
 
-        temp = self.remove_stop_word(util.refine_text(data))
+        temp = util.refine_text(data)
         temp = util.convert_list(temp, word_2_id, self.config.pad_id, self.config.unk_id)
         temp = temp[:self.config.sequence_len]
 
