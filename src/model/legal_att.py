@@ -65,7 +65,19 @@ class LegalAtt:
             top_k_art_em = self.embedding_layer(top_k_art)
 
         with tf.variable_scope('article_encoder'):
-            top_k_art_enc = self.art_encoder(top_k_art_em)
+            shared_layers = {}
+            for kernel_size in self.kernel_size:
+                shared_layers['conv_' + str(kernel_size)] = tf.keras.layers.Conv1D(
+                    self.filter_dim,
+                    kernel_size,
+                    padding='same',
+                    kernel_regularizer=self.regularizer,
+                    name='conv_' + str(kernel_size)
+                )
+                if self.use_batch_norm:
+                    shared_layers['norm_' + str(kernel_size)] = tf.keras.layers.BatchNormalization()
+
+            top_k_art_enc = self.art_encoder(top_k_art_em, shared_layers)
 
         with tf.variable_scope('attention_layer'):
             ones = tf.ones_like(top_k_score, dtype=tf.float32)
@@ -173,25 +185,15 @@ class LegalAtt:
 
         return top_k_art, top_k_art_len
 
-    def art_encoder(self, top_k_art_em):
-        conv_layers = []
-        for kernel_size in self.kernel_size:
-            conv_layers.append(tf.keras.layers.Conv1D(
-                self.filter_dim,
-                kernel_size,
-                padding='same',
-                kernel_regularizer=self.regularizer,
-                name='conv_' + str(kernel_size)
-            ))
-
+    def art_encoder(self, top_k_art_em, shared_layers):
         top_k_art_enc = []
         for i in range(self.top_k):
             art_enc = []
             art_em = top_k_art_em[:, i, :, :]
-            for conv_layer in conv_layers:
-                conv = conv_layer(art_em)
+            for kernel_size in self.kernel_size:
+                conv = shared_layers['conv_' + str(kernel_size)](art_em)
                 if self.use_batch_norm:
-                    conv = tf.keras.layers.BatchNormalization()(conv)
+                    conv = shared_layers['norm_' + str(kernel_size)](conv)
                 conv = tf.nn.relu(conv)
                 art_enc.append(conv)
 

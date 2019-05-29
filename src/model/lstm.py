@@ -77,6 +77,8 @@ class LSTM:
 
     def lstm_encoder(self, inputs, input_len):
         enc_output = tf.keras.layers.LSTM(self.hidden_size, return_sequences=True)(inputs)
+        if self.use_batch_norm:
+            enc_output = tf.keras.layers.BatchNormalization()(enc_output)
         mask = tf.expand_dims(tf.sequence_mask(input_len, maxlen=self.max_seq_len, dtype=tf.float32), axis=-1)
         enc_output = tf.reduce_max(mask * enc_output, axis=-2)
 
