@@ -104,7 +104,7 @@ def inference(sess, model, batch_iter, art_data, verbose=True):
 
 
 def test():
-    print('load data')
+    print('load data...')
     word_2_id, id_2_word = read_dict(config.word_dict)
     accu_2_id, id_2_accu = read_dict(config.accu_dict)
     art_2_id, id_2_art = read_dict(config.art_dict)
@@ -118,7 +118,7 @@ def test():
     test_data = data_reader.read_test_data(word_2_id, accu_2_id, art_2_id)
     art_data = data_reader.read_article(art_2_id.keys(), word_2_id)
 
-    print('build model')
+    print('build model...')
     with tf.variable_scope('model'):
         model = get_model(config, embedding_matrix, is_training=False)
 
