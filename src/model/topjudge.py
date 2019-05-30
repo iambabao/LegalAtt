@@ -92,10 +92,11 @@ class TopJudge:
                 self.filter_dim,
                 kernel_size,
                 padding='same',
-                kernel_regularizer=self.regularizer
+                kernel_regularizer=self.regularizer,
+                name='conv_' + str(kernel_size)
             )(inputs)
             if self.use_batch_norm:
-                conv = tf.keras.layers.BatchNormalization()(conv)
+                conv = tf.keras.layers.BatchNormalization(name='norm_' + str(kernel_size))(conv)
             conv = tf.nn.relu(conv)
             pool = tf.reduce_max(conv, axis=-2, keepdims=True)
 
@@ -106,7 +107,7 @@ class TopJudge:
         return enc_output
 
     def lstm_encoder(self, inputs, initial_state_list):
-        lstm = tf.keras.layers.LSTM(self.hidden_size, return_state=True)
+        lstm = tf.keras.layers.LSTM(self.hidden_size, return_state=True, name='lstm')
 
         if initial_state_list is not None:
             new_c = []

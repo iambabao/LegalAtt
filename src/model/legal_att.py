@@ -75,15 +75,11 @@ class LegalAtt:
                     name='conv_' + str(kernel_size)
                 )
                 if self.use_batch_norm:
-                    shared_layers['norm_' + str(kernel_size)] = tf.keras.layers.BatchNormalization()
+                    shared_layers['norm_' + str(kernel_size)] = tf.keras.layers.BatchNormalization(name='norm_' + str(kernel_size))
 
             top_k_art_enc = self.art_encoder(top_k_art_em, shared_layers)
 
         with tf.variable_scope('attention_layer'):
-            ones = tf.ones_like(top_k_score, dtype=tf.float32)
-            zeros = tf.zeros_like(top_k_score, dtype=tf.float32)
-            relevant_score = tf.where(top_k_score >= self.threshold, ones, zeros)
-
             key = tf.keras.layers.Dense(
                 self.att_size,
                 tf.nn.tanh,
@@ -91,34 +87,33 @@ class LegalAtt:
                 kernel_regularizer=self.regularizer
             )(fact_enc)
 
+            ones = tf.ones_like(top_k_score, dtype=tf.float32)
+            zeros = tf.zeros_like(top_k_score, dtype=tf.float32)
+            relevant_score = tf.where(top_k_score >= self.threshold, ones, zeros)
+
             law_atts = []
-            with tf.variable_scope('get_attention'):
-                dense_layer = tf.keras.layers.Dense(
-                    self.att_size,
-                    tf.nn.tanh,
-                    use_bias=False,
-                    kernel_regularizer=self.regularizer
-                )
+            dense_layer = tf.keras.layers.Dense(
+                self.att_size,
+                tf.nn.tanh,
+                use_bias=False,
+                kernel_regularizer=self.regularizer
+            )
+            for i in range(self.top_k):
+                art_enc = top_k_art_enc[i]
+                art_len = top_k_art_len[:, i]
+                score = relevant_score[:, i]
 
-                for i in range(self.top_k):
-                    art_enc = top_k_art_enc[i]
-                    art_len = top_k_art_len[:, i]
-                    score = tf.reshape(relevant_score[:, i], [-1, 1, 1])
-
-                    query = dense_layer(art_enc)
-                    law_att = score * self.get_attention(query, key, art_len, self.fact_len)
-                    law_atts.append(law_att)
+                query = dense_layer(art_enc)
+                law_att = tf.reshape(score, [-1, 1, 1]) * self.get_attention(query, key, art_len, self.fact_len)
+                law_atts.append(law_att)
 
             # prevent dividing by zero
-            att_weight = tf.reshape(tf.reduce_sum(relevant_score, axis=-1), [-1, 1])
-            ones = tf.ones_like(att_weight, dtype=tf.float32)
-            att_weight = tf.where(att_weight > 0, att_weight, ones)
+            att_num = tf.reshape(tf.reduce_sum(relevant_score, axis=-1), [-1, 1])
+            ones = tf.ones_like(att_num, dtype=tf.float32)
+            att_num = tf.where(att_num > 0, att_num, ones)
 
             fact_enc_with_att = [tf.reduce_max(tf.matmul(law_att, fact_enc), axis=-2) for law_att in law_atts]
-            fact_enc_with_att = tf.add_n(fact_enc_with_att) / att_weight
-
-        with tf.variable_scope('highway'):
-            fact_enc_with_att = fact_enc_with_att + tf.reduce_max(fact_enc, axis=-2)
+            fact_enc_with_att = tf.add_n(fact_enc_with_att) / att_num + tf.reduce_max(fact_enc, axis=-2)
 
         with tf.variable_scope('output_layer'):
             self.task_1_output, task_1_loss = self.output_layer(fact_enc_with_att, self.accu, self.accu_num)
@@ -128,9 +123,7 @@ class LegalAtt:
             self.task_2_output = tf.where(tf.nn.sigmoid(art_score) > self.threshold, ones, zeros)
 
         with tf.variable_scope('loss'):
-            task_2_loss = tf.reduce_mean(
-                tf.nn.sigmoid_cross_entropy_with_logits(labels=self.relevant_art, logits=art_score)
-            )
+            task_2_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.relevant_art, logits=art_score))
 
             self.loss = task_1_loss + task_2_loss
             if self.regularizer is not None:
@@ -160,7 +153,7 @@ class LegalAtt:
                 name='conv_' + str(kernel_size)
             )(inputs)
             if self.use_batch_norm:
-                conv = tf.keras.layers.BatchNormalization()(conv)
+                conv = tf.keras.layers.BatchNormalization(name='norm_' + str(kernel_size))(conv)
             conv = tf.nn.relu(conv)
             enc_output.append(conv)
 

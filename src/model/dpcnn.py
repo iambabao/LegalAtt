@@ -87,24 +87,26 @@ class DPCNN:
                 self.filter_dim,
                 self.kernel_size,
                 padding='same',
-                kernel_regularizer=self.regularizer
+                kernel_regularizer=self.regularizer,
+                name='conv_a_' + str(output_len)
             )(pre_output)
             if self.use_batch_norm:
-                cur_block = tf.keras.layers.BatchNormalization()(cur_block)
+                cur_block = tf.keras.layers.BatchNormalization(name='norm_a_' + str(output_len))(cur_block)
             cur_block = tf.nn.relu(cur_block)
 
             cur_block = tf.keras.layers.Conv1D(
                 self.filter_dim,
                 self.kernel_size,
                 padding='same',
-                kernel_regularizer=self.regularizer
+                kernel_regularizer=self.regularizer,
+                name='conv_b_' + str(output_len)
             )(cur_block)
             if self.use_batch_norm:
-                cur_block = tf.keras.layers.BatchNormalization()(cur_block)
+                cur_block = tf.keras.layers.BatchNormalization(name='norm_b_' + str(output_len))(cur_block)
             cur_block = tf.nn.relu(cur_block)
 
             cur_output = tf.add(cur_block, pre_output)
-            cur_output = tf.keras.layers.MaxPooling1D(self.kernel_size, 2, 'same')(cur_output)
+            cur_output = tf.keras.layers.MaxPooling1D(self.kernel_size, strides=2, padding='same')(cur_output)
 
             output_len = math.ceil(output_len / 2)
 

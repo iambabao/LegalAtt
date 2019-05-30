@@ -104,9 +104,6 @@ def inference(sess, model, batch_iter, art_data, verbose=True):
 
 
 def test():
-    if not os.path.exists(config.result_dir):
-        os.makedirs(config.result_dir)
-
     print('load data')
     word_2_id, id_2_word = read_dict(config.word_dict)
     accu_2_id, id_2_accu = read_dict(config.accu_dict)

@@ -87,7 +87,7 @@ class CNN:
                 name='conv_' + str(kernel_size)
             )(inputs)
             if self.use_batch_norm:
-                conv = tf.keras.layers.BatchNormalization()(conv)
+                conv = tf.keras.layers.BatchNormalization(name='norm_' + str(kernel_size))(conv)
             conv = tf.nn.relu(conv)
             pool = tf.reduce_max(conv, axis=-2)
             enc_output.append(pool)
