@@ -115,14 +115,17 @@ class LegalAtt:
             fact_enc_with_att = tf.add_n(fact_enc_with_att) / att_num + tf.reduce_max(fact_enc, axis=-2)
 
         with tf.variable_scope('output'):
-            self.task_1_output, task_1_loss = self.output_layer(fact_enc_with_att, self.accu, self.accu_num, multi_label=True)
+            self.task_1_output, task_1_loss = self.output_layer(fact_enc_with_att, self.accu, layer='sigmoid')
 
             ones = tf.ones_like(art_score, dtype=tf.float32)
             zeros = tf.zeros_like(art_score, dtype=tf.float32)
             self.task_2_output = tf.where(tf.nn.sigmoid(art_score) > self.threshold, ones, zeros)
 
         with tf.variable_scope('loss'):
-            task_2_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.relevant_art, logits=art_score))
+            task_2_loss = tf.reduce_mean(tf.reduce_sum(
+                tf.nn.sigmoid_cross_entropy_with_logits(labels=self.relevant_art, logits=art_score),
+                axis=-1
+            ))
 
             self.loss = task_1_loss + task_2_loss
             if self.regularizer is not None:
@@ -209,18 +212,23 @@ class LegalAtt:
 
         return masked_att
 
-    def output_layer(self, inputs, labels, label_num, multi_label):
+    def output_layer(self, inputs, labels, layer):
         fc_output = tf.keras.layers.Dense(self.fc_size, kernel_regularizer=self.regularizer)(inputs)
         if self.is_training and self.dropout < 1.0:
             fc_output = tf.nn.dropout(fc_output, rate=self.dropout)
 
-        logits = tf.keras.layers.Dense(label_num, kernel_regularizer=self.regularizer)(fc_output)
-        if multi_label:
-            output = tf.nn.sigmoid(logits)
-            ce_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=labels, logits=logits))
-        else:
+        logits = tf.keras.layers.Dense(labels.shape[-1], kernel_regularizer=self.regularizer)(fc_output)
+        if layer == 'softmax':
             output = tf.nn.softmax(logits)
             ce_loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(labels=labels, logits=logits))
+        elif layer == 'sigmoid':
+            output = tf.nn.sigmoid(logits)
+            ce_loss = tf.reduce_mean(tf.reduce_sum(
+                tf.nn.sigmoid_cross_entropy_with_logits(labels=labels, logits=logits),
+                axis=-1
+            ))
+        else:
+            assert False
 
         return output, ce_loss
 
@@ -236,7 +244,7 @@ class LegalAtt:
         elif self.optimizer == 'SGD':
             optimizer = tf.train.GradientDescentOptimizer(learning_rate=self.lr)
         else:
-            optimizer = tf.train.GradientDescentOptimizer(learning_rate=self.lr)
+            assert False
 
         train_op = optimizer.minimize(self.loss, global_step=global_step)
 
