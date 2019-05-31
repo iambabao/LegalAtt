@@ -9,7 +9,7 @@ class Config:
                  block_num=5, head_num=5, model_dim=200,
                  fc_size_s=100, fc_size_m=200, fc_size_l=500,
                  optimizer='Adam', lr=0.001, dropout=0.2, l2_rate=0.0,
-                 multi_label=True, embedding_trainable=False, use_batch_norm=False):
+                 embedding_trainable=False, use_batch_norm=False):
         self.root_dir = root_dir
 
         self.temp_dir = os.path.join(self.root_dir, 'temp')
@@ -84,6 +84,5 @@ class Config:
         self.lr = lr
         self.dropout = dropout
         self.l2_rate = l2_rate
-        self.multi_label = multi_label
         self.embedding_trainable = embedding_trainable
         self.use_batch_norm = use_batch_norm

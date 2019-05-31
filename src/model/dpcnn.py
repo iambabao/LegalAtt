@@ -28,7 +28,6 @@ class DPCNN:
         self.dropout = config.dropout
         self.l2_rate = config.l2_rate
         self.use_batch_norm = config.use_batch_norm
-        self.multi_label = config.multi_label
 
         self.is_training = is_training
 
@@ -55,9 +54,9 @@ class DPCNN:
         with tf.variable_scope('fact_encoder'):
             fact_enc = self.dpcnn_encoder(fact_em, self.max_seq_len)
 
-        with tf.variable_scope('output_layer'):
-            self.task_1_output, task_1_loss = self.output_layer(fact_enc, self.accu, self.accu_num)
-            self.task_2_output, task_2_loss = self.output_layer(fact_enc, self.relevant_art, self.art_num)
+        with tf.variable_scope('output'):
+            self.task_1_output, task_1_loss = self.output_layer(fact_enc, self.accu, self.accu_num, multi_label=True)
+            self.task_2_output, task_2_loss = self.output_layer(fact_enc, self.relevant_art, self.art_num, multi_label=True)
 
         with tf.variable_scope('loss'):
             self.loss = task_1_loss + task_2_loss
@@ -113,13 +112,13 @@ class DPCNN:
         cur_output = tf.reshape(cur_output, [-1, self.filter_dim])
         return cur_output
 
-    def output_layer(self, inputs, labels, label_num):
+    def output_layer(self, inputs, labels, label_num, multi_label):
         fc_output = tf.keras.layers.Dense(self.fc_size, kernel_regularizer=self.regularizer)(inputs)
         if self.is_training and self.dropout < 1.0:
             fc_output = tf.nn.dropout(fc_output, rate=self.dropout)
 
         logits = tf.keras.layers.Dense(label_num, kernel_regularizer=self.regularizer)(fc_output)
-        if self.multi_label:
+        if multi_label:
             output = tf.nn.sigmoid(logits)
             ce_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=labels, logits=logits))
         else:

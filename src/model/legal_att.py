@@ -30,7 +30,6 @@ class LegalAtt:
         self.dropout = config.dropout
         self.l2_rate = config.l2_rate
         self.use_batch_norm = config.use_batch_norm
-        self.multi_label = config.multi_label
 
         self.is_training = is_training
 
@@ -79,7 +78,7 @@ class LegalAtt:
 
             top_k_art_enc = self.art_encoder(top_k_art_em, shared_layers)
 
-        with tf.variable_scope('attention_layer'):
+        with tf.variable_scope('attention'):
             key = tf.keras.layers.Dense(
                 self.att_size,
                 tf.nn.tanh,
@@ -115,8 +114,8 @@ class LegalAtt:
             fact_enc_with_att = [tf.reduce_max(tf.matmul(law_att, fact_enc), axis=-2) for law_att in law_atts]
             fact_enc_with_att = tf.add_n(fact_enc_with_att) / att_num + tf.reduce_max(fact_enc, axis=-2)
 
-        with tf.variable_scope('output_layer'):
-            self.task_1_output, task_1_loss = self.output_layer(fact_enc_with_att, self.accu, self.accu_num)
+        with tf.variable_scope('output'):
+            self.task_1_output, task_1_loss = self.output_layer(fact_enc_with_att, self.accu, self.accu_num, multi_label=True)
 
             ones = tf.ones_like(art_score, dtype=tf.float32)
             zeros = tf.zeros_like(art_score, dtype=tf.float32)
@@ -210,13 +209,13 @@ class LegalAtt:
 
         return masked_att
 
-    def output_layer(self, inputs, labels, label_num):
+    def output_layer(self, inputs, labels, label_num, multi_label):
         fc_output = tf.keras.layers.Dense(self.fc_size, kernel_regularizer=self.regularizer)(inputs)
         if self.is_training and self.dropout < 1.0:
             fc_output = tf.nn.dropout(fc_output, rate=self.dropout)
 
         logits = tf.keras.layers.Dense(label_num, kernel_regularizer=self.regularizer)(fc_output)
-        if self.multi_label:
+        if multi_label:
             output = tf.nn.sigmoid(logits)
             ce_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=labels, logits=logits))
         else:

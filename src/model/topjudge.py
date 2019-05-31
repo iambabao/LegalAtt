@@ -28,7 +28,6 @@ class TopJudge:
         self.dropout = config.dropout
         self.l2_rate = config.l2_rate
         self.use_batch_norm = config.use_batch_norm
-        self.multi_label = config.multi_label
 
         self.is_training = is_training
 
@@ -64,10 +63,10 @@ class TopJudge:
         with tf.variable_scope('task_3'):
             _, task_3_state = self.lstm_encoder(fact_enc, [task_1_state, task_2_state])
 
-        with tf.variable_scope('output_layer'):
-            self.task_1_output, task_1_loss = self.output_layer(task_1_state[0], self.accu, self.accu_num)
-            self.task_2_output, task_2_loss = self.output_layer(task_2_state[0], self.relevant_art, self.art_num)
-            self.task_3_output, task_3_loss = self.output_layer(task_3_state[0], self.impr, self.impr_num)
+        with tf.variable_scope('output'):
+            self.task_1_output, task_1_loss = self.output_layer(task_1_state[0], self.accu, self.accu_num, multi_label=True)
+            self.task_2_output, task_2_loss = self.output_layer(task_2_state[0], self.relevant_art, self.art_num, multi_label=True)
+            self.task_3_output, task_3_loss = self.output_layer(task_3_state[0], self.impr, self.impr_num, multi_label=False)
 
         with tf.variable_scope('loss'):
             self.loss = task_1_loss + task_2_loss + task_3_loss
@@ -101,7 +100,6 @@ class TopJudge:
                 conv = tf.keras.layers.BatchNormalization(name='norm_' + str(kernel_size))(conv)
             conv = tf.nn.relu(conv)
             pool = tf.reduce_max(conv, axis=-2, keepdims=True)
-
             enc_output.append(pool)
 
         enc_output = tf.concat(enc_output, axis=-1)
@@ -131,13 +129,13 @@ class TopJudge:
 
         return enc_output, (enc_state_h, enc_state_c)
 
-    def output_layer(self, inputs, labels, label_num):
+    def output_layer(self, inputs, labels, label_num, multi_label):
         fc_output = tf.keras.layers.Dense(self.fc_size, kernel_regularizer=self.regularizer)(inputs)
         if self.is_training and self.dropout < 1.0:
             fc_output = tf.nn.dropout(fc_output, rate=self.dropout)
 
         logits = tf.keras.layers.Dense(label_num, kernel_regularizer=self.regularizer)(fc_output)
-        if self.multi_label:
+        if multi_label:
             output = tf.nn.sigmoid(logits)
             ce_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=labels, logits=logits))
         else:
