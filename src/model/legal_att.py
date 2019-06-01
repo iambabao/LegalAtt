@@ -90,7 +90,7 @@ class LegalAtt:
             zeros = tf.zeros_like(top_k_score, dtype=tf.float32)
             relevant_score = tf.where(top_k_score >= self.threshold, ones, zeros)
 
-            law_atts = []
+            legal_atts = []
             dense_layer = tf.keras.layers.Dense(
                 self.att_size,
                 tf.nn.tanh,
@@ -103,15 +103,15 @@ class LegalAtt:
                 score = relevant_score[:, i]
 
                 query = dense_layer(art_enc)
-                law_att = tf.reshape(score, [-1, 1, 1]) * self.get_attention(query, key, art_len, self.fact_len)
-                law_atts.append(law_att)
+                att_matrix = tf.reshape(score, [-1, 1, 1]) * self.get_attention(query, key, art_len, self.fact_len)
+                legal_atts.append(tf.reduce_sum(att_matrix, axis=-2))
 
             # prevent dividing by zero
             att_num = tf.reshape(tf.reduce_sum(relevant_score, axis=-1), [-1, 1])
             ones = tf.ones_like(att_num, dtype=tf.float32)
             att_num = tf.where(att_num > 0, att_num, ones)
 
-            fact_enc_with_att = [tf.reduce_max(tf.matmul(law_att, fact_enc), axis=-2) for law_att in law_atts]
+            fact_enc_with_att = [tf.reduce_max(tf.expand_dims(att, axis=-1) * fact_enc, axis=-2) for att in legal_atts]
             fact_enc_with_att = tf.add_n(fact_enc_with_att) / att_num + tf.reduce_max(fact_enc, axis=-2)
 
         with tf.variable_scope('output'):
@@ -119,7 +119,7 @@ class LegalAtt:
 
             ones = tf.ones_like(art_score, dtype=tf.float32)
             zeros = tf.zeros_like(art_score, dtype=tf.float32)
-            self.task_2_output = tf.where(tf.nn.sigmoid(art_score) > self.threshold, ones, zeros)
+            self.task_2_output = tf.where(tf.nn.sigmoid(art_score) >= self.threshold, ones, zeros)
 
         with tf.variable_scope('loss'):
             task_2_loss = tf.reduce_mean(tf.reduce_sum(

@@ -4,10 +4,10 @@ import re
 import math
 import random
 import jieba
+import joblib
 from jieba import posseg as pseg
 from gensim.models import Word2Vec
 from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.externals import joblib
 
 
 def pad_list(item_list, pad, max_len):
