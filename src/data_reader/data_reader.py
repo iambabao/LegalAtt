@@ -77,6 +77,7 @@ class DataReader:
         fact_len = []
 
         temp = util.refine_text(data)
+        print(temp)
         temp = util.convert_list(temp, word_2_id, self.config.pad_id, self.config.unk_id)
         temp = temp[:self.config.sequence_len]
 
